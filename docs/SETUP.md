@@ -1,242 +1,253 @@
 # Setup guide for Noah
 
-This guide sets up the agent on your Mac, start to finish. Do it once. Every step says what to click or paste, and what you should see when it worked.
+This sets up the agent on your Mac, start to finish. Do it once. Every step says what to click or paste, and what you should see when it worked.
 
-**Plan for about 45 minutes**, mostly waiting for downloads. Keep the Mac plugged in.
+**Plan for about an hour**, mostly waiting for downloads. Keep the Mac plugged in.
+
+You'll set up five things, in this order:
+
+| # | What | Why |
+|---|---|---|
+| 1 | The agent software on your Mac | Does the actual work |
+| 2 | A **private** GitHub repository (the "queue") | Where teammates' interviews wait until your Mac processes them |
+| 3 | Two GitHub access keys | One for teammates' Send app, one for your Mac |
+| 4 | A Google Sheet + Google permission | Where results go |
+| 5 | The GitHub runner | Tells your Mac the moment an interview arrives |
 
 ---
 
 ## Before you start: checklist
 
 - [ ] **A Mac with an Apple chip.** Apple menu  → **About This Mac**. The "Chip" line should say **Apple M1** (or M2, M3, M4…). An "Intel" Mac won't work.
-- [ ] **macOS 14 (Sonoma) or newer.** Same window, the line at the top (15 Sequoia or newer is best).
+- [ ] **macOS 14 (Sonoma) or newer** (15 Sequoia or newer is best). It's shown in the same window.
 - [ ] **16 GB of memory**, on the "Memory" line.
 - [ ] **15 GB of free disk space.** Apple menu → **System Settings → General → Storage**.
-- [ ] **The team's Google account** password at hand. This is the account that will own the Inbox folder and the sheet.
+- [ ] **A GitHub account** (free, github.com). This is where the queue lives.
+- [ ] **The team's Google account** password at hand. It will own the results sheet.
 - [ ] **Your Mac login password.** Some steps ask for it.
 
 ---
 
-## Part 1: Open Terminal
+## Part 1: Install the agent on your Mac
 
-Terminal is a window where you paste text commands. You only need it for Part 2.
+### 1.1 Open Terminal
 
-1. Press **⌘ Command + Space**, type **Terminal**, press **Return**.
-2. A window with a blinking cursor opens. That's it.
+Press **⌘ Command + Space**, type **Terminal**, then press **Return**. A window with a blinking cursor opens.
 
-**How to run a command from this guide:** click the copy button on the grey box, click into Terminal, press **⌘ Command + V** to paste, then press **Return**. Wait until the text stops scrolling and you see the blinking cursor again before the next one.
+**How to run a command from this guide:** copy the grey box, click into Terminal, press **⌘ Command + V**, then press **Return**. Wait until the blinking cursor is back before the next one.
 
 > When Terminal asks for your **password**, type your Mac login password and press Return. **Nothing appears while you type.** That's normal.
 
----
+### 1.2 Install Homebrew (the Mac's installer for developer tools)
 
-## Part 2: Install the agent
-
-### Step 2.1: Install Homebrew (the Mac's app installer for developer tools)
-
-Skip this step if you've installed Homebrew before. To check, paste `brew --version`. If it prints a version number, skip ahead.
+To check whether you already have it, paste `brew --version`. If it prints a version number, skip to 1.3.
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-- It asks for your password, then "Press RETURN to continue". Press Return.
-- It takes 5–10 minutes.
-- **At the end it prints "Next steps" with two or three commands** starting with `echo` and `eval`. Copy those lines exactly as printed and run them. This step is easy to miss.
+- It asks for your password, then "Press RETURN to continue". Press Return. It takes 5–10 minutes.
+- **At the end it prints "Next steps"** with two or three lines starting with `echo` and `eval`. **Copy those exactly as printed and run them.** This step is easy to miss.
 
-✅ **Check:** `brew --version` prints a version number.
+✅ `brew --version` now prints a version number.
 
-### Step 2.2: Install Apple's command line tools
+### 1.3 Install Apple's command line tools
 
 ```bash
 xcode-select --install
 ```
 
-- A pop-up appears. Click **Install**, then **Agree**. It takes 5–15 minutes.
-- If it says "already installed", great, move on.
+A pop-up appears. Click **Install**, then **Agree**, and wait 5–15 minutes. If it says "already installed", move on.
 
-### Step 2.3: Download the agent
+### 1.4 Download the agent
 
 ```bash
 git clone https://github.com/G-Eskayo/slopecycle-interview-agent.git ~/slopecycle-interview-agent
 ```
 
-✅ **Check:** in Finder, your home folder now has a folder called **slopecycle-interview-agent**.
+✅ Finder → your home folder now has a **slopecycle-interview-agent** folder.
 
-### Step 2.4: Run the installer
+### 1.5 Run the installer
 
 ```bash
 cd ~/slopecycle-interview-agent && ./scripts/install.sh
 ```
 
-This installs everything else: the AI model, n8n, the transcriber and the processor. **It takes 15–30 minutes.** The AI model alone is a 5 GB download.
+This installs the AI model (a 5 GB download), n8n, the transcriber, the processor and the wake-up helper. **It takes 15–30 minutes.**
 
-- If macOS asks whether to open **Ollama** ("downloaded from the internet"), click **Open**.
-- If it stops with a message like "Install Homebrew first" or "Run: xcode-select --install", do that step, then run the same command again.
-- Running it again is always safe.
+- If macOS asks whether to open **Ollama**, click **Open**.
+- If it stops and tells you to do something first, do it, then run the same command again. Running it again is always safe.
 
-✅ **Check:** near the end you see both lines:
-```
-  processor OK
-  n8n OK: open http://127.0.0.1:5678
-```
-
-From now on, both start by themselves whenever you log in to the Mac.
+✅ Near the end you see `processor OK` and `n8n OK`. You'll also see a line saying to fill in the queue settings. That's next.
 
 ---
 
-## Part 3: Make your n8n account
+## Part 2: Make the private queue on GitHub
 
-n8n is the tool that runs the workflow. It runs on your Mac, and you use it in your web browser.
+Teammates' interviews wait here until your Mac picks them up. Each one is deleted automatically once it's safely in the sheet.
 
-1. Open **http://127.0.0.1:5678** in Chrome or Safari.
-2. Fill in the "Set up owner account" form: your email and a password. **Save this password**; it's only for n8n on this Mac.
-3. Skip the survey questions.
+1. Sign in at **github.com**. Top right **+** → **New repository**.
+2. **Repository name:** `slopecycle-interview-queue`.
+3. Choose **Private**. ⚠️ This matters: it will hold customer interviews.
+4. Tick **Add a README file**. Click **Create repository**.
+5. Add the "doorbell" file that tells your Mac when something arrives:
+   1. In the new repository click **Add file → Create new file**.
+   2. In the name box type exactly: `.github/workflows/tell-processor.yml` (the slashes create folders).
+   3. Open `queue-repo-template/.github/workflows/tell-processor.yml` from your slopecycle-interview-agent folder (right-click → Open With → TextEdit), copy everything, and paste it into the big box on GitHub.
+   4. Click **Commit changes…** → **Commit changes**.
+6. Replace the README text with the one in `queue-repo-template/README.md` (click README.md → the pencil icon → paste → **Commit changes**).
 
-✅ **Check:** you see the n8n home screen ("Overview" / "Workflows").
+✅ The repository shows **Private**, a `.github` folder and the README.
 
 ---
 
-## Part 4: Make the Inbox folder and the sheet in Google Drive
+## Part 3: Make two access keys
 
-Sign in to **drive.google.com** with the **team Google account**.
+An access key lets an app add files to the queue without anyone's password. Make two, so you can cut off teammates' key without stopping your own Mac.
 
-### Step 4.1: The Inbox folder
+1. github.com → your profile picture (top right) → **Settings** → scroll down to **Developer settings** (bottom of the left menu) → **Personal access tokens → Fine-grained tokens** → **Generate new token**.
+2. Fill in:
+   - **Token name:** `SlopeCycle Send (teammates)`
+   - **Expiration:** **Custom**, pick the end of the semester
+   - **Repository access:** **Only select repositories** → choose `slopecycle-interview-queue`
+   - **Permissions → Repository permissions → Contents:** **Read and write**. Leave everything else alone; in particular, don't give it "Workflows".
+3. Click **Generate token** and **copy it right away** (it starts with `github_pat_`). Save it in your notes as **Teammate key**. You'll give this to teammates.
+4. Do it again with the name `SlopeCycle processor (Noah's Mac)`, with the same settings. Save it as **Processor key**. **Don't share this one.**
 
-1. **New → New folder**, name it **SlopeCycle Interviews Inbox**, then **Create**.
-2. Right-click the folder → **Share → Share**. Add all five teammates' emails as **Editor**, then **Send**.
-3. Open the folder and look at the web address. It ends like this:
-   `drive.google.com/drive/folders/`**`1AbCdEfGhIjKlMnOpQrStUv`**
-   The bold part is the **folder ID**. Copy it into a note; you'll paste it in Part 7.
+### Put the processor key on your Mac
 
-### Step 4.2: The Interview Log sheet
+```bash
+open -e ~/.slopecycle.env
+```
 
-1. **New → Google Sheets → Blank spreadsheet**. Rename it (top left) to **SlopeCycle Interview Log**.
-2. Add the four tabs from the files in `workflow/sheet-template/` in your slopecycle-interview-agent folder:
+A TextEdit window opens. Fill in the two lines and save (⌘ Command + S):
+
+```
+SLOPE_QUEUE_REPO=YOUR_GITHUB_USERNAME/slopecycle-interview-queue
+SLOPE_QUEUE_TOKEN=github_pat_...your processor key...
+```
+
+Then run the installer once more so the processor picks them up:
+
+```bash
+cd ~/slopecycle-interview-agent && ./scripts/install.sh
+```
+
+✅ The "fill in SLOPE_QUEUE" line no longer appears.
+
+---
+
+## Part 4: Results sheet and Google permission
+
+### 4.1 Make your n8n account
+
+Open **http://127.0.0.1:5678** in Chrome or Safari and fill in "Set up owner account". **Save this password**; it's only for n8n on this Mac. Skip the survey.
+
+### 4.2 Make the sheet
+
+Sign in to **sheets.google.com** with the **team Google account**.
+
+1. **Blank spreadsheet**. Rename it (top left) to **SlopeCycle Interview Log**.
+2. Add the three tabs from `workflow/sheet-template/`:
    1. **File → Import → Upload**, choose `Interviews.csv`.
    2. Import location: **Insert new sheet(s)**. Click **Import data**.
-   3. Repeat for `Evidence.csv`, `Transcripts.csv` and `Run Log.csv`.
-3. Delete the empty **Sheet1** tab: right-click it → **Delete**.
-4. **Check the four tab names are exactly** `Interviews`, `Evidence`, `Transcripts`, `Run Log`, with the same capitals and spaces. Rename any that differ (double-click the tab).
-5. Look at the web address:
-   `docs.google.com/spreadsheets/d/`**`1XyZaBcDeFgHiJkLmNoPqRsTuVwXyZ`**`/edit`
-   The bold part is the **sheet ID**. Copy it into your note.
-6. Share the sheet with the teammates (**Share** button, top right), as **Editor** or **Viewer**.
+   3. Repeat for `Evidence.csv` and `Run Log.csv`.
+3. Right-click the empty **Sheet1** tab → **Delete**.
+4. **Check the tab names are exactly** `Interviews`, `Evidence`, `Run Log`. Double-click a tab to rename it.
+5. Copy the **sheet ID** from the address into your notes. It's the bold part here: `docs.google.com/spreadsheets/d/`**`1XyZaBcDeF...`**`/edit`
+6. **Share** (top right): add the teammates as **Viewer**, so they can read results but not type over them.
+
+### 4.3 Let n8n write to the sheet
+
+Google needs a free "OAuth client", a key that lets *your* n8n, and only yours, edit *your* sheet.
+
+1. **console.cloud.google.com**, signed in with the team account. Top left project picker → **New project** → name `SlopeCycle agent` → **Create**. Make sure it's selected.
+2. Search **Google Sheets API** → **Enable**.
+3. Search **OAuth consent screen** → **Get started**:
+   1. App name `SlopeCycle agent`, support email the team email → **Next**.
+   2. **External** → **Next**.
+   3. Contact email → **Next** → agree → **Create**.
+4. Left menu **Audience** → **Test users → Add users** → the team account → **Save**.
+5. Left menu **Clients** → **Create client**:
+   1. **Web application**, name `n8n`.
+   2. Under **Authorized redirect URIs** → **Add URI**, paste:
+      ```
+      http://localhost:5678/rest/oauth2-credential/callback
+      ```
+   3. **Create**, then copy the **Client ID** and **Client secret** into your notes. Treat the secret like a password.
+6. In n8n: **Overview → Credentials → Create credential** → **Google Sheets OAuth2 API**:
+   1. Name it exactly **SlopeCycle Google** and paste the ID and secret.
+   2. If n8n's **OAuth Redirect URL** differs from what you pasted in step 5, add n8n's version in Google too.
+   3. **Sign in with Google** with the team account. On "Google hasn't verified this app", click **Continue** (it's your own app), tick the boxes, **Continue**.
+   4. ✅ "Account connected". **Save**.
+7. **Stop the weekly sign-out:** back in Google Cloud → **Audience → Publish app → Confirm**. Apps left in "Testing" get signed out every 7 days, and the agent would quietly stop.
 
 ---
 
-## Part 5: Give n8n permission to use Google
+## Part 5: Import the workflow
 
-Google requires a free "OAuth client". It's a key that lets *your* n8n, and only yours, open *your* Drive and Sheets. It's the most clicks of any part, so take it slowly.
+1. In n8n: **Overview → Create workflow**. Top right **⋯ → Import from File…** and choose `workflow/slopecycle-interview-agent.json`.
+2. Double-click **Settings**. Paste your **sheet ID** in place of `PASTE_SPREADSHEET_ID_HERE` and leave `processor_url` alone.
+3. Double-click **each green Google Sheets box** and choose **SlopeCycle Google** under **Credential**. n8n doesn't link it automatically after import.
+4. **⌘ Command + S** to save, then flip **Inactive → Active** (top right).
 
-### Step 5.1: Create a Google Cloud project
+---
 
-1. Go to **console.cloud.google.com** and sign in with the **team Google account**. Accept the terms if asked.
-2. Top left, click the project picker (it may say "Select a project") → **New project**. Name it **SlopeCycle agent**, then **Create**.
-3. Make sure the picker now shows **SlopeCycle agent**.
+## Part 6: Connect the GitHub runner (the doorbell)
 
-### Step 5.2: Turn on Drive and Sheets
-
-1. In the search bar at the top, type **Google Drive API**, open it, and click **Enable**.
-2. Search **Google Sheets API**, open it, and click **Enable**.
-
-### Step 5.3: Set up the sign-in screen
-
-1. Search **OAuth consent screen** and open it. Click **Get started**.
-2. **App name:** `SlopeCycle agent`. **User support email:** the team email. **Next**.
-3. **Audience:** **External**. **Next**.
-4. **Contact email:** the team email. **Next**, tick the agreement, **Create**.
-5. In the left menu click **Audience**. Under **Test users** click **Add users**, add the team Google account, **Save**.
-
-### Step 5.4: Create the key
-
-1. In the left menu click **Clients** → **Create client**.
-2. **Application type:** **Web application**. **Name:** `n8n`.
-3. Under **Authorized redirect URIs** click **Add URI** and paste exactly:
+1. On GitHub open **slopecycle-interview-queue → Settings → Actions → Runners → New self-hosted runner**.
+2. Choose **macOS** and **ARM64**. In the "Configure" box there's a line like:
+   `./config.sh --url https://github.com/you/slopecycle-interview-queue --token ABCDEF123456...`
+   Copy only the **token**, the long code after `--token`. It's valid for one hour.
+3. In Terminal (replace the two parts in capitals):
+   ```bash
+   cd ~/slopecycle-interview-agent && ./scripts/install-runner.sh YOUR_GITHUB_USERNAME/slopecycle-interview-queue PASTE_TOKEN_HERE
    ```
-   http://localhost:5678/rest/oauth2-credential/callback
-   ```
-4. Click **Create**. A box shows a **Client ID** and a **Client secret**. Copy both into your note. Treat the secret like a password, and don't post it anywhere.
-
-### Step 5.5: Put the key into n8n
-
-1. In n8n (http://127.0.0.1:5678): **Overview → Credentials** tab → **Create credential**. (In some versions it's the **+** button → **Credential**.)
-2. Search **Google Drive OAuth2 API** and pick it.
-3. Name it exactly **SlopeCycle Google** (click the name at the top to edit it).
-4. Paste the **Client ID** and **Client Secret**.
-5. Compare the **OAuth Redirect URL** n8n shows with the one you pasted in 5.4. If it's different, go back to Google and add n8n's version too.
-6. Click **Sign in with Google**, choose the team account.
-   - You'll see **"Google hasn't verified this app."** That's expected: it's your own app. Click **Continue**.
-   - Tick all the boxes it asks for, then **Continue**.
-7. ✅ n8n says **"Connection tested successfully"** or shows a green "Account connected". Click **Save**.
-8. **Do the same again** for **Google Sheets OAuth2 API**: same name, same ID and secret, same sign-in.
-
-### Step 5.6: Stop the weekly sign-out (important)
-
-While a Google app is in "Testing", Google signs it out **every 7 days**, and the agent would quietly stop working.
-
-1. Back in Google Cloud: **OAuth consent screen → Audience → Publish app → Confirm**.
-2. You don't need Google's verification for this. It only affects the "unverified app" warning, which only you see.
-
-If you ever see Google sign-in errors in the Run Log, repeat Step 5.5's **Sign in with Google** for both credentials.
+4. ✅ It ends with "Runner connected". The GitHub Runners page shows your Mac as **Idle**.
 
 ---
 
-## Part 6: Import the workflow
+## Part 7: Test it end to end
 
-1. In n8n: **Overview → Create workflow** (or **+ → Workflow**).
-2. Top right, click the **⋯** menu → **Import from File…**, then choose `workflow/slopecycle-interview-agent.json` from your slopecycle-interview-agent folder.
-3. ✅ You see a long row of boxes with coloured notes (it matches the picture in the README).
+1. Install the **SlopeCycle Send** app on your own Mac, as in the [teammate guide](TEAMMATES.md). Use the **Teammate key**.
+2. Send a test interview. Respondent `TEST-01`, notes: *"SYNTHETIC TEST DATA. Parent has two kids who ski, ages 8 and 11. Would rent if size swaps are free."*
+3. Within a few minutes:
+   - [ ] **Interviews** has a row for TEST-01: 2 kids, ages 8 and 11, rental "conditional", and lots of cells saying **"Not collected in interview"**. That's correct: the notes didn't cover those things.
+   - [ ] **Evidence** has the quotes.
+   - [ ] **Run Log** says **completed**.
+   - [ ] On GitHub, `slopecycle-interview-queue` no longer has a `submissions` folder. The interview was deleted *after* the sheet was checked.
+4. Open **http://127.0.0.1:8787** (bookmark it). Your test shows **Verified** and **Removed** times.
 
----
+Delete the TEST-01 rows afterwards if you like.
 
-## Part 7: Fill in the settings and connect Google
+## Part 8: Hand out the Send app
 
-1. **Double-click the "Settings" box** (section 2).
-   - Replace `PASTE_INBOX_FOLDER_ID_HERE` with your **folder ID**.
-   - Replace `PASTE_SPREADSHEET_ID_HERE` with your **sheet ID**.
-   - Leave `processor_url` as it is. Close the box.
-2. **Connect Google on the six Google boxes.** Double-click each one, choose **SlopeCycle Google** in the **Credential** dropdown at the top, then close it:
-   - **List files in Inbox** and **Download file from Drive** (green triangle Drive icon)
-   - **Save to Transcripts tab**, **Save to Evidence tab**, **Save to Interviews tab**, **Save to Run Log tab** (green Sheets icon)
-3. Press **⌘ Command + S** to save.
-4. Top right, flip the switch from **Inactive** to **Active**. Confirm if asked.
-
-✅ The workflow now checks the Inbox every 5 minutes.
+Send each teammate three things privately (not in a group chat): the **Send app** download link from the README, the **Teammate key**, and the queue name `YOUR_GITHUB_USERNAME/slopecycle-interview-queue`. Their guide is [TEAMMATES.md](TEAMMATES.md).
 
 ---
 
-## Part 8: Test it
+## Keeping it running
 
-1. In Finder, open **slopecycle-interview-agent → fixtures**. Drag **happy-path.txt** into the **SlopeCycle Interviews Inbox** folder in Google Drive. (It's made-up test data and says so inside.)
-2. Open **http://127.0.0.1:8787**. This is the agent's status page. Click **Run now**.
-3. Wait 1–3 minutes, then open the **Interview Log** sheet.
+- **Your Mac only needs to be on when you want results.** Interviews sent while it's asleep wait safely in the queue. When it wakes up or you log in, it catches up by itself.
+- Everything starts by itself at login. Nothing needs opening.
+- For a demo, stop it sleeping: **System Settings → Battery → Options →** turn on **"Prevent automatic sleeping on power adapter when the display is off."**
 
-✅ **Check, all four:**
-- [ ] **Interviews** has a new row: 2 kids, ages 7 and 10, rental reaction "conditional".
-- [ ] **Evidence** has rows with quotes like "About $300 for both kids…".
-- [ ] **Run Log** has a row saying **completed**.
-- [ ] Click **Run now** again and wait a minute: **still only one** interview row. That's the duplicate protection working.
+## What gets deleted, and when
 
-Afterwards you can delete the test rows from each tab, or keep them; they're labelled SYNTHETIC TEST DATA.
+| Thing | Kept until |
+|---|---|
+| Notes and recording in the queue | The sheet has been **read back and matched** cell by cell. Then they're deleted, and the history is cleared once the queue is empty |
+| An interview that **failed** (unreadable audio, empty notes) | **Never deleted automatically.** Its data never reached the sheet. The Run Log says why; fix it by sending it again, then delete the old folder on GitHub |
+| Rows in the sheet | Forever. They're the record |
+| Copies on your Mac | None. The processor forgets the content once the sheet is verified, and n8n keeps no run history |
 
-**Bookmark http://127.0.0.1:8787.** It only opens on your Mac. It's your control panel for demos.
-
----
-
-## Part 9: Keeping it running
-
-- The agent works **while your Mac is on, awake and logged in**. Files uploaded while it sleeps simply wait, and it catches up when you open the lid.
-- For a demo or a busy week, stop it sleeping: **System Settings → Battery → Options →** turn on **"Prevent automatic sleeping on power adapter when the display is off."**
-- Everything restarts on its own when you log in. No need to open anything.
-
-## Updating to a newer version
+## Updating
 
 ```bash
 cd ~/slopecycle-interview-agent && git pull && ./scripts/install.sh
 ```
 
-If the update notes say the workflow changed, repeat Parts 6–7 (import the new file, fill in the settings, delete the old workflow).
+If the release notes say the workflow changed, re-import it (Part 5) and delete the old one.
 
 ## Turning it off
 
@@ -244,7 +255,7 @@ If the update notes say the workflow changed, repeat Parts 6–7 (import the new
 ~/slopecycle-interview-agent/scripts/stop.sh
 ```
 
-To disconnect Google as well: in n8n delete the **SlopeCycle Google** credentials, then remove "SlopeCycle agent" at **myaccount.google.com/permissions**. Nothing in Drive or the sheet is deleted.
+To cut off teammates: GitHub → Settings → Developer settings → Fine-grained tokens → **SlopeCycle Send (teammates)** → **Delete**. Your Mac keeps working with its own key.
 
 ---
 
@@ -252,17 +263,14 @@ To disconnect Google as well: in n8n delete the **SlopeCycle Google** credential
 
 | What you see | What to do |
 |---|---|
-| `command not found: brew` after installing Homebrew | You skipped the "Next steps" lines at the end of Step 2.1. Scroll up in Terminal, run them, then open a new Terminal window. |
-| Installer stops with a red error | Run `./scripts/install.sh` again. If it fails at the same place, copy the last 20 lines and send them to Gil. |
-| http://127.0.0.1:8787 won't open | The processor isn't running. Run `./scripts/install.sh` again; it restarts it. |
-| Nothing shows up in the sheet | Status page: does the file appear? If not, check the workflow is **Active** and the folder ID in **Settings** is right. In n8n open **Executions** to see the last runs. |
-| Run Log says **failed (will retry)** | Usually Google or the AI model was briefly unavailable. It retries on its own, waiting longer each time. After 3 failed tries at reading a file it stops and says **failed**; edit the file (any small change) or upload it again to make it try again. |
-| Run Log says **failed** with "not supported" | The file was a PDF, photo or other type the agent can't read. Paste the content into a Google Doc instead. |
-| Google sign-in errors | Redo Step 5.5 "Sign in with Google" for both credentials, and check Step 5.6 was done. |
-| A row says **Needs review** | Not an error. The reason is in the `review_reasons` column. Read it and check the interview. |
+| `command not found: brew` | You skipped the "Next steps" lines in 1.2. Scroll up, run them, open a new Terminal window. |
+| Installer stops with a red error | Run it again. If it fails at the same place, send the last 20 lines to Gil. |
+| http://127.0.0.1:8787 won't open | Run `./scripts/install.sh` again (it restarts everything). |
+| Status page says **Queue problem** | Check the two lines in `~/.slopecycle.env` (Part 3) and that the processor key hasn't expired. |
+| An interview was sent but nothing happens | GitHub → queue repo → **Actions**: is there a run? If it's "queued", the runner is offline: run Part 6 again. If there's no run at all, check `.github/workflows/tell-processor.yml` exists. Also check the n8n workflow is **Active**. |
+| Run Log: **failed (will retry)** | Google or the AI model was briefly unavailable. It tries again on the next interview, wake-up or **Run now**. |
+| Run Log: **failed (needs a person)** | Read `error_message`. Usually an empty note or a recording that can't be played. Ask the teammate to send it again. |
+| Google sign-in errors | Redo "Sign in with Google" (Part 4.3 step 6) and check step 7 was done. |
+| A row says **Needs review** | Not an error. `review_reasons` says what a person should check. |
 
-Logs, if someone technical asks for them, are in `~/Library/Logs/slopecycle/`.
-
-## Privacy
-
-Interviews stay on this Mac and in the team's Google account. The AI model runs on this Mac; no AI company receives interview content. The only other copy is a small run history at `~/Library/Application Support/slope-processor/`, used for retries and duplicate checks.
+Logs, if someone technical asks: `~/Library/Logs/slopecycle/`.
