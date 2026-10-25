@@ -7,9 +7,11 @@ import Testing
 /// The token is read from the environment only; it is never written anywhere.
 private enum Live {
     static let env = ProcessInfo.processInfo.environment
+    // Opt-in, and only against a PRIVATE scratch repo you name: owner/name in SLOPE_SEND_REPO.
     static let enabled = env["SLOPE_SEND_LIVE"] == "1" && !(env["SLOPE_SEND_TOKEN"] ?? "").isEmpty
+        && RepoRef.parse(env["SLOPE_SEND_REPO"] ?? "") != nil
     static var token: String { env["SLOPE_SEND_TOKEN"] ?? "" }
-    static var repo: RepoRef { RepoRef.parse(env["SLOPE_SEND_REPO"] ?? "G-Eskayo/slopecycle-queue-test")! }
+    static var repo: RepoRef { RepoRef.parse(env["SLOPE_SEND_REPO"] ?? "")! }
     static var settings: QueueSettings { QueueSettings(interviewer: "Live Test", repository: repo.description, token: token) }
     static let client = URLSessionHTTPClient()
 

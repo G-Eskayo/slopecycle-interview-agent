@@ -81,7 +81,7 @@ Live tests against a private scratch repo (synthetic data only; the key is passe
 
 ```sh
 SLOPE_SEND_LIVE=1 SLOPE_SEND_TOKEN="$(gh auth token)" \
-SLOPE_SEND_REPO=G-Eskayo/slopecycle-queue-test SLOPE_SEND_M4A=/path/to/synthetic.m4a \
+SLOPE_SEND_REPO=you/your-private-scratch-repo SLOPE_SEND_M4A=/path/to/synthetic.m4a \
 swift test --filter LiveGitHubTests
 ```
 
