@@ -183,7 +183,7 @@ def test_missing_fields_listed_and_summary_says_not_provided():
     a = run(base(willingness_to_rent=None, rental_conditions=[], interview_date=None))
     assert "willingness_to_rent" in a.interview_row["missing_fields"]
     assert "interview_date" in a.interview_row["missing_fields"]
-    assert "Not provided" in a.interview_row["concise_summary"]
+    assert "Not collected in interview:" in a.interview_row["concise_summary"]
 
 
 def test_formula_like_text_is_escaped_everywhere_but_numbers_stay_numbers():
@@ -255,3 +255,23 @@ def test_spending_basis_left_alone_when_it_agrees():
 def test_expert_words_are_expert_opinion_not_respondent_statements():
     rows = run(base(interview_type="expert")).evidence_rows
     assert {r["evidence_type"] for r in rows} == {"expert_opinion"}
+
+
+def test_sheet_row_says_not_collected_instead_of_blank():
+    from slope_processor.validate import NOT_COLLECTED, sheet_interview_row
+    a = run(base(willingness_to_rent=None, rental_conditions=[], interview_date=None, amount_min=None, amount_max=None))
+    row = sheet_interview_row(a.interview_row)
+    assert row["willingness_to_rent"] == NOT_COLLECTED
+    assert row["interview_date"] == NOT_COLLECTED
+    assert row["rental_conditions"] == NOT_COLLECTED
+    assert row["amount_min"] == NOT_COLLECTED
+    assert row["derived_per_child_amount"].startswith("Not calculated")
+    assert row["review_reasons"] != NOT_COLLECTED  # run/analysis columns are never "not collected"
+    assert row["number_of_kids_who_ski"] == 2  # real answers untouched
+    assert None not in row.values()
+
+
+def test_not_collected_is_never_invented_into_an_answer():
+    from slope_processor.validate import sheet_interview_row
+    row = sheet_interview_row(run(base()).interview_row)
+    assert row["willingness_to_rent"] == "conditional" and row["amount_min"] == 300

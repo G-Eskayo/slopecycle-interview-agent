@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at TEXT, updated_at TEXT, completed_at TEXT, next_attempt_at TEXT,
     output_record_key TEXT, error_category TEXT, error_message TEXT,
     duplicate_of TEXT,
-    result_json TEXT
+    result_json TEXT,                -- rows waiting to be verified in the sheet; cleared once verified
+    verified_at TEXT, purged_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_run_per_revision ON runs(source_file_id, revision_key) WHERE status != 'duplicate';
 CREATE INDEX IF NOT EXISTS by_sha ON runs(content_sha256);
@@ -48,6 +49,10 @@ def revision_key(file: dict) -> str:
     if file.get("version"):
         return f"v:{file['version']}"
     return f"mod:{file.get('modifiedTime', '')}"
+
+
+def _has_rows(result_json: str | None) -> bool:
+    return bool(result_json) and bool(json.loads(result_json).get("interview_rows"))
 
 
 def run_id_for(file_id: str, rev: str) -> str:
@@ -71,6 +76,10 @@ class Ledger:
         self.path = str(path)
         with self._db() as db:
             db.executescript(SCHEMA)
+            cols = {r["name"] for r in db.execute("PRAGMA table_info(runs)")}
+            for col in ("verified_at", "purged_at"):
+                if col not in cols:
+                    db.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT")
 
     def _db(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
@@ -120,7 +129,7 @@ class Ledger:
         if status == "awaiting_write":
             return "rewrite" if now - updated > WRITE_GRACE else None
         if status == "retry" and due:
-            return "rewrite" if row["result_json"] else "process"
+            return "rewrite" if _has_rows(row["result_json"]) else "process"
         return None
 
     def claim(self, file_id: str, rev: str, sha: str, name: str, now: datetime) -> Claim:
@@ -167,6 +176,42 @@ class Ledger:
     def cached_result(self, run_id: str) -> dict | None:
         row = self.get(run_id)
         return json.loads(row["result_json"]) if row and row["result_json"] else None
+
+    def cache(self, run_id: str, result: dict) -> None:
+        """Remember the exact rows handed to n8n, so verification compares against what was sent."""
+        with self._db() as db:
+            db.execute("UPDATE runs SET result_json=? WHERE run_id=?", (json.dumps(result), run_id))
+
+    def verified(self, run_id: str, now: datetime) -> None:
+        """The sheet holds this run's rows. Forget the cached interview content; keep only fingerprints."""
+        with self._db() as db:
+            row = db.execute("SELECT status, result_json FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                return
+            status = "completed" if _has_rows(row["result_json"]) and row["status"] in ("awaiting_write", "retry") else row["status"]
+            db.execute("UPDATE runs SET status=?, verified_at=?, completed_at=COALESCE(completed_at, ?), result_json=NULL, "
+                       "error_category=CASE WHEN ?='completed' THEN NULL ELSE error_category END, updated_at=? WHERE run_id=?",
+                       (status, now.isoformat(), now.isoformat(), status, now.isoformat(), run_id))
+
+    def purgeable(self, source_file_id: str, rev: str) -> bool:
+        """True only if the sheet was verified for this exact Submission (or it is a verified copy of another one)."""
+        with self._db() as db:
+            done = db.execute("SELECT 1 FROM runs WHERE source_file_id=? AND revision_key=? AND status='completed' "
+                              "AND verified_at IS NOT NULL", (source_file_id, rev)).fetchone()
+            copy = db.execute(
+                "SELECT 1 FROM runs d JOIN runs o ON o.run_id = d.duplicate_of WHERE d.source_file_id=? AND d.revision_key=? "
+                "AND d.status='duplicate' AND d.verified_at IS NOT NULL AND o.source_file_id != d.source_file_id",
+                (source_file_id, rev)).fetchone()
+        return bool(done or copy)
+
+    def mark_purged(self, source_file_id: str, now: datetime) -> None:
+        with self._db() as db:
+            db.execute("UPDATE runs SET purged_at=? WHERE source_file_id=?", (now.isoformat(), source_file_id))
+
+    def in_flight(self) -> bool:
+        with self._db() as db:
+            return db.execute("SELECT 1 FROM runs WHERE status IN ('claimed','awaiting_write') "
+                              "OR (status='retry' AND result_json IS NOT NULL AND result_json LIKE '%interview_rows%')").fetchone() is not None
 
     def touch(self, run_id: str, now: datetime) -> None:
         with self._db() as db:

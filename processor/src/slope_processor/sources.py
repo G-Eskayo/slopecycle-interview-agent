@@ -14,6 +14,7 @@ class SourceKind(Enum):
     DOCX = "docx"
     AUDIO = "audio"
     FOLDER = "folder"
+    SUBMISSION = "submission"
     UNSUPPORTED = "unsupported"
 
 
@@ -27,8 +28,13 @@ AUDIO_EXTS = {".m4a", ".mp3", ".wav", ".aac", ".caf", ".mp4", ".mov", ".aiff", "
 TEXT_EXTS = {".txt", ".md", ".markdown"}
 
 
+SUBMISSION_MIME = "application/x-slopecycle-submission"
+
+
 def classify(name: str, mime: str) -> SourceKind:
     ext = PurePath(name).suffix.lower()
+    if mime == SUBMISSION_MIME:
+        return SourceKind.SUBMISSION
     if mime == "application/vnd.google-apps.folder":
         return SourceKind.FOLDER
     if mime in TEXT_MIMES or ext in TEXT_EXTS:
@@ -45,10 +51,12 @@ class Line:
     number: int
     text: str
     timestamp: str | None = None
+    section: str | None = None  # "notes" / "recording" when one Submission holds both
 
     @property
     def locator(self) -> str:
-        return f"line {self.number}" + (f" ({self.timestamp})" if self.timestamp else "")
+        where = f"{self.section}, line {self.number}" if self.section else f"line {self.number}"
+        return where + (f" ({self.timestamp})" if self.timestamp else "")
 
 
 def text_from_bytes(data: bytes, kind: SourceKind) -> str:
@@ -85,12 +93,12 @@ def _docx_text(data: bytes) -> str:
     return "\n".join(parts)
 
 
-def lines_from_text(text: str) -> list[Line]:
+def lines_from_text(text: str, section: str | None = None, start: int = 1) -> list[Line]:
     out: list[Line] = []
     for raw in text.splitlines():
         stripped = raw.strip()
         if stripped:
-            out.append(Line(len(out) + 1, stripped))
+            out.append(Line(start + len(out), stripped, None, section))
     return out
 
 
@@ -99,12 +107,12 @@ def _clock(seconds: float) -> str:
     return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
 
 
-def lines_from_transcript(transcript: dict) -> list[Line]:
+def lines_from_transcript(transcript: dict, section: str | None = None, start: int = 1) -> list[Line]:
     out: list[Line] = []
     for seg in transcript.get("segments", []):
         text = " ".join(str(seg.get("text", "")).split())
         if not text:
             continue
         ts = _clock(float(seg.get("start", 0)))
-        out.append(Line(len(out) + 1, f"[{ts}] {seg.get('speaker', 'S1')}: {text}", ts))
+        out.append(Line(start + len(out), f"[{ts}] {seg.get('speaker', 'S1')}: {text}", ts, section))
     return out

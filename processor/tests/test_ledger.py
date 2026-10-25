@@ -100,7 +100,7 @@ def test_write_whose_confirmation_was_lost_is_rewritten_from_cache_not_reextract
 
 def test_failed_sheet_write_is_retried_with_backoff_from_cache(ledger):
     c = ledger.claim("f1", "md5:aaa", "sha1", "a.txt", at(0))
-    ledger.awaiting_write(c.run_id, {"x": 1}, "INT-1", at(1))
+    ledger.awaiting_write(c.run_id, {"interview_rows": [{"interview_id": "INT-1"}]}, "INT-1", at(1))
     ledger.write_failed(c.run_id, "403 permission denied", at(1))
     assert ledger.plan([f()], at(3)) == []  # backing off
     assert actions(ledger.plan([f()], at(7))) == {"f1": "rewrite"}
@@ -138,3 +138,79 @@ def test_error_messages_are_truncated_and_never_hold_secrets(ledger):
     ledger.fail(c.run_id, "internal", "token=ya29.SECRETSECRET Bearer abc.def " + "x" * 1000, retryable=True, now=at(1))
     msg = ledger.get(c.run_id)["error_message"]
     assert "SECRETSECRET" not in msg and "abc.def" not in msg and len(msg) <= 300
+
+
+
+def rows(iid="INT-1"):
+    return {"interview_rows": [{"interview_id": iid}], "evidence_rows": [], "run_log_rows": []}
+
+
+def test_verified_run_forgets_its_interview_content_and_becomes_purgeable(ledger):
+    c = ledger.claim("f1", "v:tree1", "sha1", "s", at(0))
+    ledger.awaiting_write(c.run_id, rows(), "INT-1", at(1))
+    assert ledger.purgeable("f1", "v:tree1") is False  # written is not enough
+    ledger.verified(c.run_id, at(2))
+    r = ledger.get(c.run_id)
+    assert r["status"] == "completed" and r["result_json"] is None and r["content_sha256"] == "sha1"
+    assert ledger.purgeable("f1", "v:tree1") is True
+
+
+def test_failed_runs_are_never_purgeable_even_when_their_log_row_is_verified(ledger):
+    c = ledger.claim("f1", "v:tree1", "sha1", "s", at(0))
+    ledger.fail(c.run_id, "unsupported_or_unreadable", "bad audio", retryable=False, now=at(1))
+    ledger.cache(c.run_id, {"run_log_rows": [{"run_id": c.run_id}]})
+    ledger.verified(c.run_id, at(2))
+    assert ledger.get(c.run_id)["status"] == "failed"
+    assert ledger.purgeable("f1", "v:tree1") is False
+
+
+def test_copy_of_another_submission_is_purgeable_once_its_log_row_is_verified(ledger):
+    a = ledger.claim("f1", "v:t1", "same", "s", at(0))
+    ledger.awaiting_write(a.run_id, rows(), "INT-1", at(1))
+    dup = ledger.claim("f2", "v:t2", "same", "s", at(2))
+    assert dup.action == "duplicate"
+    assert ledger.purgeable("f2", "v:t2") is False
+    ledger.cache(dup.run_id, {"run_log_rows": [{"run_id": dup.run_id}]})
+    ledger.verified(dup.run_id, at(3))
+    assert ledger.purgeable("f2", "v:t2") is True
+    assert ledger.purgeable("f1", "v:t1") is False  # the original still waits for its own verification
+
+
+def test_a_concurrent_trigger_duplicate_never_makes_the_original_purgeable(ledger):
+    a = ledger.claim("f1", "v:t1", "sha", "s", at(0))
+    dup = ledger.claim("f1", "v:t1", "sha", "s", at(0))
+    ledger.cache(dup.run_id, {"run_log_rows": []})
+    ledger.verified(dup.run_id, at(1))
+    assert ledger.purgeable("f1", "v:t1") is False  # the original is still being processed
+    assert ledger.get(a.run_id)["status"] == "claimed"
+
+
+def test_retryable_failure_without_rows_reprocesses_instead_of_rewriting(ledger):
+    c = ledger.claim("f1", "v:t1", "sha", "s", at(0))
+    ledger.fail(c.run_id, "model_unavailable", "down", retryable=True, now=at(1))
+    ledger.cache(c.run_id, {"run_log_rows": [{"run_id": c.run_id}]})
+    assert actions(ledger.plan([{"id": "f1", "name": "s", "mimeType": "application/x-slopecycle-submission", "version": "t1"}], at(30))) == {"f1": "process"}
+
+
+def test_in_flight_tracks_unverified_work(ledger):
+    assert ledger.in_flight() is False
+    c = ledger.claim("f1", "v:t1", "sha", "s", at(0))
+    assert ledger.in_flight() is True
+    ledger.awaiting_write(c.run_id, rows(), "INT-1", at(1))
+    assert ledger.in_flight() is True
+    ledger.verified(c.run_id, at(2))
+    assert ledger.in_flight() is False
+
+
+def test_old_database_without_new_columns_is_upgraded(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.sqlite3"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE runs (run_id TEXT PRIMARY KEY, source_file_id TEXT NOT NULL, revision_key TEXT NOT NULL, "
+               "content_sha256 TEXT, source_name TEXT, status TEXT NOT NULL, attempt_count INTEGER NOT NULL DEFAULT 0, "
+               "write_failures INTEGER NOT NULL DEFAULT 0, started_at TEXT, updated_at TEXT, completed_at TEXT, "
+               "next_attempt_at TEXT, output_record_key TEXT, error_category TEXT, error_message TEXT, duplicate_of TEXT, result_json TEXT)")
+    db.commit(); db.close()
+    led = Ledger(path)
+    c = led.claim("f1", "v:t", "s", "n", at(0))
+    led.verified(c.run_id, at(1))

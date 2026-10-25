@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .extract import OllamaClient, build_messages
-from .sources import Line, SourceKind, UnsupportedSource, lines_from_text, lines_from_transcript, text_from_bytes
+from .sources import (Line, SourceKind, UnsupportedSource, classify, lines_from_text, lines_from_transcript,
+                      text_from_bytes)
 from .validate import Analysis, SourceMeta, analyze
 
 MIN_SOURCE_CHARS = 40
@@ -69,6 +70,40 @@ def run(data: bytes, kind: SourceKind, meta: SourceMeta, processed_at: str, clie
     extraction = client.extract(build_messages(lines, meta.file_name, hyps))
     analysis = analyze(extraction, lines, meta, hyps, processed_at)
     return Result(analysis, lines, lines if is_audio else None)
+
+
+def run_submission(sub, processed_at: str, client: OllamaClient | None = None,
+                   hypotheses: list[str] | None = None) -> Result:
+    """One Send-app Submission: dictated notes and/or a recording of the same interview, plus the details the
+    interviewer typed in (docs/submission-format.md)."""
+    from .queue import Submission  # noqa: F401  (type only)
+
+    lines: list[Line] = []
+    recording_lines: list[Line] = []
+    if sub.notes is not None:
+        text = text_from_bytes(sub.notes, SourceKind.TEXT)
+        lines += lines_from_text(text, section="notes")
+    if sub.recording is not None:
+        if classify(sub.recording_name or "", "") is not SourceKind.AUDIO:
+            raise UnsupportedSource(f"recording type not supported: {sub.recording_name}")
+        transcript = transcribe(sub.recording, sub.recording_name or "recording.m4a")
+        recording_lines = lines_from_transcript(transcript, section="recording", start=len(lines) + 1)
+        if not recording_lines and not lines:
+            raise UnsupportedSource("no speech found in the recording")
+        lines += recording_lines
+    if sum(len(l.text) for l in lines) < MIN_SOURCE_CHARS:
+        raise UnsupportedSource("notes are empty or too short to be an interview")
+
+    m = sub.meta
+    facts = {"interview_type": m.get("interview_type"), "interview_date": m.get("interview_date"),
+             "interviewer": m.get("interviewer"), "respondent_label": m.get("respondent_label")}
+    meta = SourceMeta(file_id=sub.submission_id, file_name=sub.submission_id, url="",
+                      revision_key=f"tree:{sub.submission_id}", submitted_by=m.get("interviewer"))
+    client = client or OllamaClient()
+    hyps = hypotheses if hypotheses is not None else load_hypotheses()
+    extraction = client.extract(build_messages(lines, sub.submission_id, hyps, facts))
+    analysis = analyze(extraction, lines, meta, hyps, processed_at, facts=facts)
+    return Result(analysis, lines, recording_lines or None)
 
 
 def load_hypotheses() -> list[str]:

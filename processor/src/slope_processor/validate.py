@@ -55,6 +55,30 @@ INTERVIEW_COLUMNS = [
     "unanswered_questions", "suggested_followups", "possible_implication", "missing_fields", "conflicting_statements",
     "review_reasons", "review_status", "extractor_version",
 ]
+NOT_COLLECTED = "Not collected in interview"
+# Columns about the run or the analysis, not answers from the interview: these never say "Not collected".
+PROCESS_COLUMNS = {
+    "interview_id", "source_file_id", "source_name", "source_url", "source_version_or_hash", "processed_at",
+    "submitted_by", "exclude_from_parent_stats", "derivation_note", "concise_summary", "supported_hypotheses",
+    "challenged_hypotheses", "unanswered_questions", "suggested_followups", "possible_implication", "missing_fields",
+    "conflicting_statements", "review_reasons", "review_status", "extractor_version",
+}
+
+
+def sheet_interview_row(row: dict) -> dict:
+    """What goes into the sheet: an unanswered interview field says so in words; nothing is left blank to be guessed."""
+    out = {}
+    for col, v in row.items():
+        empty = v is None or (isinstance(v, str) and not v.strip())
+        if col == "derived_per_child_amount" and empty:
+            out[col] = "Not calculated (see derivation_note)"
+        elif empty and col not in PROCESS_COLUMNS:
+            out[col] = NOT_COLLECTED
+        else:
+            out[col] = "" if v is None else v
+    return out
+
+
 EVIDENCE_COLUMNS = [
     "evidence_id", "interview_id", "source_revision", "field_or_claim", "exact_excerpt", "source_locator",
     "evidence_type", "interpretation_note",
@@ -103,8 +127,8 @@ def _norm(s: str) -> str:
 
 # In typed notes, only an answer line or a quotation can be the respondent's own words; everything else is the
 # interviewer writing. Transcript lines carry a speaker label instead and are left to the model.
-RESPONDENT_LINE = re.compile(r"^(a|answer|r|respondent|parent)\s*[:.)-]|^[\"“']|^\[\d\d:\d\d:\d\d\]", re.I)
-LINE_PREFIX = re.compile(r"\bL\d+\|\s*")
+RESPONDENT_LINE = re.compile(r"^(a|answer|r|respondent|parent)\s*[:.)-]|[\"“”]|^\[\d\d:\d\d:\d\d\]", re.I)
+LINE_PREFIX = re.compile(r"\bL\d+\|\s*(\[(notes|recording)\]\s*)?|^\[(notes|recording)\]\s*")
 
 
 def _num(v):
@@ -132,7 +156,11 @@ def _stated(n, text: str) -> bool:
     return any(re.search(rf"\b{w}\b", text, re.I) for w in words)
 
 
-def analyze(extraction: dict, lines: list[Line], meta: SourceMeta, hypotheses: list[str], processed_at: str) -> Analysis:
+FACT_FIELDS = ("interview_type", "interview_date", "interviewer", "respondent_label")
+
+
+def analyze(extraction: dict, lines: list[Line], meta: SourceMeta, hypotheses: list[str], processed_at: str,
+            facts: dict | None = None) -> Analysis:
     reasons: list[str] = []
     e = dict(extraction) if isinstance(extraction, dict) else {}
     source_text = "\n".join(l.text for l in lines)
@@ -154,6 +182,11 @@ def analyze(extraction: dict, lines: list[Line], meta: SourceMeta, hypotheses: l
     for f in ("outerwear_only", "concept_introduced_before_reaction"):
         if not isinstance(e.get(f), bool):
             e[f] = None
+
+    # What the interviewer typed into the Send app is the record; the model doesn't get to second-guess it.
+    for f in FACT_FIELDS:
+        if (facts or {}).get(f):
+            e[f] = str(facts[f]).strip()
 
     # Numbers: must be numbers, and must appear in the source. Made-up numbers are the most damaging hallucination.
     for f in ("number_of_kids_who_ski", "parent_age", "amount_min", "amount_max"):
@@ -336,7 +369,7 @@ HUMAN = {
 
 
 def _summary(e: dict, findings, missing: list[str], have_hypotheses: bool) -> str:
-    parts = [f"Overview: {e['overview'] or 'Not provided'}"]
+    parts = [f"Overview: {e['overview'] or NOT_COLLECTED}"]
     if findings:
         lines = []
         for i, (text, refs) in enumerate(findings, 1):
@@ -349,7 +382,7 @@ def _summary(e: dict, findings, missing: list[str], have_hypotheses: bool) -> st
     else:
         parts.append("Hypotheses: no team hypothesis list supplied.")
     if missing:
-        parts.append("Not provided: " + ", ".join(HUMAN.get(f, f) for f in missing) + ".")
+        parts.append(f"{NOT_COLLECTED}: " + ", ".join(HUMAN.get(f, f) for f in missing) + ".")
     if e["suggested_followups"]:
         parts.append("Follow-ups: " + " ".join(f"{i}. {q}" for i, q in enumerate(e["suggested_followups"][:3], 1)))
     if e["possible_implication"]:

@@ -9,7 +9,7 @@ The team wants every step started by an event, not a recurring check, and wants 
 - **Send app.** Teammates install a small Mac menu-bar app, *SlopeCycle Send*. They dictate notes into its text box with Wispr, optionally attach a recording, and press Send. The app writes one **Submission** (notes, recording, and who/when) as a single commit to a **private** GitHub repo, the **queue repo**, through GitHub's web API. Teammates never install Git or hold a copy of the repo. If they're offline, the app keeps the Submission and sends it when the connection comes back.
 - **One access key.** Noah creates one fine-grained GitHub token limited to writing that one repo, and teammates paste it once. They need no GitHub account. Revoking it cuts everyone off at once.
 - **Triggers, no timers.**
-  1. *Sent*: GitHub sends a push notification (webhook) to Noah's n8n through his free ngrok address.
+  1. *Sent*: GitHub notifies Noah's Mac (see [0006](0006-data-lifetime-and-github-runner-trigger.md): a self-hosted runner, not ngrok).
   2. *Woke up / logged in*: a small listener on Noah's Mac fires the same workflow, because GitHub does not resend notifications a sleeping Mac missed.
   3. *Run now*: the button, for demos.
   All three only ring a doorbell. The processor then pulls the queue repo itself and works out what's new, so a fake or repeated notification can't inject anything or cause duplicates.
@@ -23,6 +23,6 @@ The team wants every step started by an event, not a recurring check, and wants 
 
 ## Consequences
 - The queue repo holds customer interview data and must stay private. The public code repo never holds interview data.
-- A public ngrok address points at Noah's n8n. Only the webhook path is let through; the doorbell design means a forged ping does no harm.
+- (Tunnel consequence superseded by 0006: no public address at all.)
 - The app is unsigned until signed with an Apple Developer ID. Until then, first launch needs System Settings → Privacy & Security → Open Anyway.
 - Only Noah's Mac clones the queue repo, so only it grows with recordings.
