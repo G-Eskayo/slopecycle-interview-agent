@@ -1,78 +1,75 @@
-# n8n workflow: SlopeCycle Interview Agent
+# n8n workflow: SlopeCycle Interview Agent (v2, event-driven)
 
-`slopecycle-interview-agent.json` is the whole workflow. n8n only does the visible steps (timer, Google Drive, Google Sheets, calling the processor). The processor owns every decision (ADR 0003). No node here decides anything the processor did not tell it.
+`slopecycle-interview-agent.json` is the whole workflow. n8n only does the visible steps (the doorbell, calling the processor, Google Sheets). The processor owns every decision (ADR 0003, 0005, 0006). No node here decides anything the processor did not tell it, and there are no Code nodes.
+
+![The whole workflow](../docs/images/n8n-workflow-full.png)
 
 ## What each section does
 
-Every node has a plain-English name and every section has a sticky note on the canvas.
-
 | # | Section | Nodes | What happens |
 |---|---|---|---|
-| 1 | Two ways to start | `Every 5 minutes`, `Run now button` | Timer, or a POST to `/webhook/slopecycle-run-now` (answers immediately). Both go into the same path. |
-| 2 | Settings | `Settings` | The only place for `inbox_folder_id`, `spreadsheet_id`, `processor_url` (default `http://127.0.0.1:8787`). |
-| 3 | Look in the Inbox | `List files in Inbox`, `Put all files in one list` | Lists files directly inside the Inbox folder (not sub-folders, not trashed), then bundles them into `{files: [...]}`. |
-| 4 | Ask the processor | `Ask processor what is new`, `One item per file to handle`, `Add link and uploader` | POST `/plan`, split `todo` into one item per file, attach `url` (webViewLink) and `submitted_by` (last modifier's display name) from the Drive listing. |
-| 5 | One file at a time | `One file at a time`, `Does the file need to be read?`, `Download file from Drive`, `Send file to processor`, `Send decision to processor (no file)`, `Processor answer` | Batch size 1. `action = process`: download (Google Docs exported as `text/plain`, everything else as-is) and POST `/process` as multipart with the binary in field `file`. `reject` / `rewrite`: same POST, no file. `/process` timeout is 60 minutes. |
-| 6 | Save to the Sheet | `Any transcript lines?` ... `Save to Run Log tab` | In order: Transcripts (key `line_id`), Evidence (`evidence_id`), Interviews (`interview_id`), Run Log (`run_id`), each as Append or Update Row. An empty array is skipped (the `Any ...?` checks). The `Get the answer again ...` nodes just re-load the processor's answer, because the Sheets nodes replace the data flowing through. |
-| 7 | Report back | `Did processor ask us to save?`, `Tell processor: save finished`, `Tell processor: save failed` | All writes OK and `write` is true: POST `/runs/{run_id}/complete`. Any Sheets node fails (its error output): POST `/runs/{run_id}/write-failed` with `{"message": ...}`. Either way the loop moves to the next file. |
+| 1 | The doorbell | `Doorbell rings` | One Webhook, POST `/webhook/slopecycle-run`, "Respond: Immediately". Rung by the GitHub Actions runner after each send, by the wake-from-sleep listener, and by the status page's Run now button. It carries no data. No timer, no Google Drive. |
+| 2 | Settings | `Settings` | The only place for `spreadsheet_id` and `processor_url` (default `http://127.0.0.1:8787`). |
+| 3 | What is waiting? | `Ask processor what is new`, `One item per submission to handle` | POST `{processor_url}/queue/sync` (no body), then split `todo` into one item per Submission. Nothing waiting: the run ends here. |
+| 4 | One at a time | `One submission at a time`, `Process the submission`, `Processor answer` | Batch size 1. POST `/submissions/{file_id}/process` with `{"action": action}`. 60-minute timeout (audio + local model). |
+| 5 | Save to the Sheet | `Any evidence quotes?` ... `Save to Run Log tab` | In order: Evidence (key `evidence_id`), Interviews (`interview_id`), Run Log (`run_id`), each Append or Update. An empty list is skipped. The `Get the answer again ...` nodes re-load the processor's answer because Sheets nodes replace the data flowing through. |
+| 6 | Read it back | `Read Interview back from sheet`, `Read Evidence back from sheet`, `Read Run Log back from sheet`, their `Collect ...` and `... found` nodes | Get Row(s) from the sheet itself: Interviews where `interview_id` = the row's id, Evidence where `interview_id` = that id (all matches), Run Log where `run_id` = `run_id`. Interview and Evidence reads are skipped when the processor sent no interview row (duplicates, failures); the Run Log read always runs. |
+| 7 | Compare | `Put the three tabs together`, `Ask processor to compare with the sheet` | One body `{"interviews": [...], "evidence": [...], "run_log": [...]}` (keys = column headers) goes to POST `/runs/{run_id}/verify`. n8n does nothing with the answer: the processor deletes the Submission only on a perfect match. |
+| - | Failures | `Tell processor: sheet failed` | Any Sheets write or read fails (error output): POST `/runs/{run_id}/write-failed` `{"message": ...}`, then the loop moves on. Verify is never called with data that did not come from the sheet. If `Process the submission` or the verify call itself fails, the loop also moves on; the processor still holds the data and offers it again. |
 
-If the Drive download or the `/process` call itself fails, that file is skipped and the loop continues. Nothing is reported, because the processor already handles it: a claim older than 30 minutes is treated as abandoned and the file is offered again by `/plan`.
+**Nothing is deleted until the sheet is read back and matches** (ADR 0006). The processor remembers exactly what it sent; the only thing that releases a Submission is rows read back from the Google Sheet that match cell for cell.
 
 ## Node types and versions
 
-All exist in n8n 1.64.3 (the version installed on this Mac) and are still supported in current n8n.
-
 | Node | type | typeVersion |
 |---|---|---|
-| Schedule | `n8n-nodes-base.scheduleTrigger` | 1.2 |
-| Webhook | `n8n-nodes-base.webhook` | 2 |
-| Settings, Add link and uploader, Get the answer again | `n8n-nodes-base.set` | 3.4 |
-| Google Drive (list, download) | `n8n-nodes-base.googleDrive` | 3 |
-| Put all files in one list | `n8n-nodes-base.aggregate` | 1 |
-| HTTP Request (x5) | `n8n-nodes-base.httpRequest` | 4.2 |
-| One item per ... | `n8n-nodes-base.splitOut` | 1 |
-| One file at a time | `n8n-nodes-base.splitInBatches` | 3 |
-| If (x5) | `n8n-nodes-base.if` | 2.2 |
+| Doorbell | `n8n-nodes-base.webhook` | 2 |
+| Settings, `Get the answer again ...`, `... found`, `Put the three tabs together` | `n8n-nodes-base.set` | 3.4 |
+| HTTP Request (x4) | `n8n-nodes-base.httpRequest` | 4.2 |
+| `One item per ...` | `n8n-nodes-base.splitOut` | 1 |
+| `Collect ... read back` | `n8n-nodes-base.aggregate` | 1 |
+| `One submission at a time` | `n8n-nodes-base.splitInBatches` | 3 |
+| If (x4) | `n8n-nodes-base.if` | 2.2 |
 | Processor answer | `n8n-nodes-base.noOp` | 1 |
-| Google Sheets (x4) | `n8n-nodes-base.googleSheets` | 4.5 |
-| Sticky notes | `n8n-nodes-base.stickyNote` | 1 |
+| Google Sheets (x6: 3 save, 3 read) | `n8n-nodes-base.googleSheets` | 4.5 |
+| Sticky notes (12) | `n8n-nodes-base.stickyNote` | 1 |
 
-There is no Code node. Newer n8n shows newer versions of some of these (for example Sheets 4.7), but older versions keep working. If n8n offers to upgrade a node, the defaults used here do not change.
+All exist in n8n 1.64.3 (installed on this Mac) and in current n8n.
 
 ## How to set it up
 
-1. **Sheet.** Create a Google Sheet with four tabs named exactly `Interviews`, `Evidence`, `Transcripts`, `Run Log`. In each, import the matching file from `sheet-template/` into row 1 (File > Import > Replace current sheet, or paste the single header row). The column order is taken from the processor code. Adding your own extra columns to the right (or anywhere) is fine.
-2. **Import.** In n8n: Workflows > Add workflow > the `...` menu > Import from file > `slopecycle-interview-agent.json`. (The n8n CLI `import:workflow` wants a JSON array, so wrap it first: `python3 -c "import json,sys;print(json.dumps([json.load(open(sys.argv[1]))]))" slopecycle-interview-agent.json > /tmp/wf-array.json`.)
-3. **Settings.** Open the `Settings` node and replace the two placeholders. The Inbox folder id is the last part of the folder's Drive URL. The Sheet id is the long part of the Sheet's URL between `/d/` and `/edit`. Leave `processor_url` unless the processor runs elsewhere.
-4. **Google credential.** Create one Google OAuth2 credential in n8n named **SlopeCycle Google** (needs the Google Drive API and Google Sheets API enabled in the Google Cloud project, and Drive/Sheets scopes). The workflow references that name with no id. Open each of the 6 Google nodes (`List files in Inbox`, `Download file from Drive`, the four `Save to ... tab` nodes) and select the credential if n8n has not matched it. For this credential type, n8n creates separate "Google Drive OAuth2 API" and "Google Sheets OAuth2 API" credentials; create both and name both `SlopeCycle Google`.
-5. **Activate.** Make sure the processor is running on `processor_url`. Run the workflow once by hand first (Execute workflow, or POST to the test URL), look at the Run Log tab, then switch the workflow to Active. The Run now URL is `http://<n8n-host>:5678/webhook/slopecycle-run-now` (POST). The processor's Run now button needs `SLOPE_RUN_NOW_URL` set to that.
-6. n8n's own execution timeout must not be shorter than the audio jobs. Default is unlimited; if `EXECUTIONS_TIMEOUT` is set on Noah's install, raise it above 3600 seconds.
+1. **Sheet.** Create a Google Sheet with three tabs named exactly `Interviews`, `Evidence`, `Run Log`. Import the matching file from `sheet-template/` into row 1 of each. Column order comes from the processor code. Extra columns are fine. Do not apply number or date formatting to the tabs (see RAW below).
+2. **Import.** Workflows > Add workflow > `...` > Import from file. (The CLI `import:workflow` wants a JSON array: `python3 -c "import json,sys;print(json.dumps([json.load(open(sys.argv[1]))]))" slopecycle-interview-agent.json > wf-array.json`.)
+3. **Settings.** Paste the Sheet id (the long part of the Sheet's URL between `/d/` and `/edit`) into `Settings`.
+4. **Google credential.** One Google OAuth2 credential named **SlopeCycle Google** (Sheets API only; Drive is no longer used). Pick it in each of the 6 Google Sheets nodes if n8n has not matched it.
+5. **Keep n8n private.** Start n8n with `N8N_LISTEN_ADDRESS=127.0.0.1` so only this Mac can reach the doorbell. If `EXECUTIONS_TIMEOUT` is set, keep it above 3600 seconds.
+6. **Activate** after one manual run. The doorbell URL is `http://127.0.0.1:5678/webhook/slopecycle-run` (POST). The processor's Run now button needs `SLOPE_RUN_NOW_URL` set to it.
 
-## How the Sheets nodes behave (read from the n8n 1.64.3 source, not guessed)
+## Workflow settings (execution data)
 
-- **Mapping mode** is "Map Automatically": every key in the processor's row is a column header. Only keys present in the row are written. Columns the founder adds to a tab are never touched on an update, because Append or Update writes one cell per key it was given. On a brand new row, columns not in the processor's row are written empty.
-- **Match column** is the id key (`line_id`, `evidence_id`, `interview_id`, `run_id`). A matching row is updated in place; otherwise a row is appended. Resending the same rows is therefore safe.
-- **Null values are skipped on update.** If a re-processed revision has an empty field that used to have a value, the old cell value stays. This is a property of the node, not something n8n can change here.
-- **Extra fields in input = Error.** If the processor ever sends a key with no matching header in the tab (for example someone renamed a header), the write fails loudly and the processor is told `write-failed`, rather than silently creating or dropping columns. Header names must match the CSV templates exactly.
-- **Cell format = USER_ENTERED** ("Let Google Sheets format"). The processor prefixes formula-looking text with `'`. With USER_ENTERED, Google Sheets treats that leading apostrophe as its "this is text" marker: the cell holds the text without the apostrophe, so it displays cleanly and is not evaluated as a formula. (RAW would also not evaluate formulas but would show the apostrophe.) Side effect: other values are interpreted as if typed, so something like `2026-10-12` becomes a date and `00:00:02` becomes a time. Matching is on text read back from the sheet, and the ids are not number- or date-like, so keys are unaffected.
-- **Minimise API Calls (use append) = on.** Without it the node adds only one blank row and then writes the whole batch below the data, which fails once a few hundred transcript lines pass the end of the sheet's grid (a new tab has 1000 rows). With it on the node uses Google's append call, which grows the grid. The node's own hint says this assumes no blank gaps between rows, so do not leave blank rows in the data.
+Success executions: **not saved**. Manual executions: **not saved**. Error executions: **not saved**. Progress saving: off. Reason: node data in n8n's history would hold full interview rows and quotes, which ADR 0006 says must not linger anywhere. The cost is that a failed run leaves no trace in n8n's Executions list. Failures are visible instead in the processor's status page and Run Log. To debug, temporarily set "Save failed production executions" to "Save" in the workflow settings, reproduce, then turn it off and delete the saved executions.
+
+## How the Sheets nodes behave (read from the n8n 1.64.3 source, and exercised by running the real node code)
+
+- **Cell format (value input mode) = RAW** on all three save nodes (`options.cellFormat: "RAW"`, shown in the UI as "Let n8n format"). The 4.5 default is USER_ENTERED, so it is set explicitly. RAW stores values exactly as sent: `2026-11-02` stays text and reads back identically, and formulas are never evaluated. A formula-looking text keeps the processor's leading `'` visible in the cell; the processor's verify accepts that.
+- **Minimise API calls (`useAppend`) = on** for saves: new rows go through Google's append call (a new tab only has 1000 grid rows). Rows that already exist are updated in place by key. Do not leave blank rows between data rows. (The Get Row(s) operation has no such option.)
+- **Mapping** is "Map Automatically", match column is the id key, **Extra fields in input = Error** (a renamed header fails loudly and the processor is told `write-failed`). The processor never sends nulls, because append-or-update skips them and would leave a stale value.
+- **Get Row(s):** filter column = the key, `combineFilters` AND, **"Return only First Matching Row" = off** (`returnFirstMatch: false`), so Evidence returns every match. Output formatting is set to unformatted values so numbers compare exactly. The node downloads the whole tab and filters in the node, not in Google, so each read costs one Sheets API call whatever the filter. If nothing matches the node would normally output nothing and stop the path, so the read nodes have "Always Output Data" on; the resulting empty item is dropped by the `... found` / `Put the three tabs together` nodes, so a missing row shows up as a missing row, not an empty one.
+- n8n's Sheets read adds a `row_number` key; the processor ignores keys it did not send.
 
 ## Verified by actually running it
 
-Done here with n8n 1.64.3 (isolated `N8N_USER_FOLDER`, `~/.n8n` untouched) against the real processor (`uvicorn`, temp data dir) with a fake Ollama returning a canned extraction:
+n8n 1.64.3 in an isolated `N8N_USER_FOLDER` on port 5701 (listening on 127.0.0.1 only, `~/.n8n` untouched), the real processor (`uvicorn`, temp data dir), a local bare git repo as the queue, and a fake Ollama returning a valid extraction:
 
-- The JSON imports cleanly with `n8n import:workflow` (array-wrapped) and keeps the credential references name-only.
-- With Drive list/download swapped for stand-ins and Sheets swapped for pass-through nodes: three files (a `.txt`, a PDF, a Google Doc) went through `/plan`, `Add link and uploader`, the one-at-a-time loop, `/process` multipart with the binary as `file` (accepted by the processor), and the processor returned a completed Interview with `source_url` and `submitted_by` filled in. Empty tabs were skipped, Evidence/Interviews/Run Log were reached in order, and `/complete` was called only for the item with `write: true` (the processor status page showed it completed). The PDF went down the no-file path and produced a Run Log failure row with no Interview.
-- With the real Google Sheets nodes and no credentials: every Sheets node failed, its error output called `/write-failed`, the processor moved the runs to `retry` (`sheet_write`), and the loop still processed all three files.
-- With the real workflow activated on a local n8n: POST `/webhook/slopecycle-run-now` returned 200 in about 40 ms and started the same path (it then stopped at the Drive node for lack of credentials, as expected); GET returns 404, so the webhook is POST only.
+- **Test copy with a fake sheet** (the six Google Sheets nodes swapped for HTTP Request nodes talking to a small in-memory sheet that upserts by key and filters on read; everything else is the real workflow). POST `/webhook/slopecycle-run` answered 200 in about 25 ms and GET returned 404. Two Submissions went through sync, process, save, read-back and verify; each verify body had the shape `{interviews: 1, evidence: 2, run_log: 1}`, the processor answered `verified: true, purged: true`, and the Submissions were gone from the bare repo. A third Submission with the same content (a duplicate, no interview rows) skipped the Evidence/Interviews saves and reads, sent `{"interviews": [], "evidence": [], "run_log": [1 row]}`, and was verified and purged.
+- **Dropped row:** the fake sheet lost one Evidence row on read-back. Verify answered `verified: false` ("evidence: row ... not found in the sheet"), both Submissions stayed in the bare repo, and the processor marked the runs `retry`.
+- **Real workflow, real Sheets nodes, no credentials:** every Sheets node fails; `write-failed` was POSTed exactly once per run, the processor moved the runs to `retry`, verify was never called, the Submissions stayed, and the loop still processed both.
+- **Real Sheets node code** (read and append-or-update from the installed n8n, run in a harness with a mocked Google API and this workflow's real parameters): Get Row(s) returns all matches (including a row with an empty cell), saves are sent with `RAW`, updates go through the update call and new rows through append.
 
 ## NOT verified (needs real Google credentials or real data)
 
-- Anything that talks to Google: the Drive list (the folder filter, `trashed = false`, and that `fields = *` returns `md5Checksum`, `version`, `modifiedTime`, `webViewLink`, `lastModifyingUser`), the Google Doc export as `text/plain`, binary downloads, and every Sheets write. I read the node source for the behavior above but never ran it against Google.
-- That n8n auto-matches the name-only `SlopeCycle Google` credential after import. On a local activation it logged "Found credential with no ID", so expect to pick the credential once per Google node.
-- The Drive node cannot select individual fields in 1.64.3 (its list lacks `md5Checksum`, `modifiedTime`, `lastModifyingUser`), so the workflow requests all fields (`*`). That is a superset of the ones you asked for, and the processor ignores extras. If the payload to `/plan` is too big for a large Inbox, the fix is an HTTP Request node calling the Drive API with an exact `fields` list.
-- The real error text of a failed Sheets write: in 1.64.3 the Sheets node's error output does not carry the message in the item data. The `write-failed` message is therefore the generic "Google Sheets write failed (see the n8n execution log for details)" unless a newer n8n puts the text in `$json.error`, which the expression already handles. The real cause is in the n8n execution log.
-- A real audio job. The 60-minute HTTP timeout and n8n's own execution timeout are set but untested.
-- A Run now press while the 5-minute timer is already mid-run. Two executions can overlap. The processor's claims prevent duplicate processing, but two n8n executions may also each send the same file's rows; the keyed upserts make that harmless. Not tested.
-- The `Schedule` trigger firing (activation succeeded; I did not wait five minutes).
-- Whether a failed Run Log write for a `write: true` item matters: if Evidence/Interviews/Run Log fails midway, nothing after the failure is written for that file this cycle, and no Run Log "completed" row exists until the retry succeeds. Intentional (the processor will redo it), but not observed on real Sheets.
+- Anything that talks to Google: the real RAW round trip (write, then read back through the Sheets API), the `useAppend` append on a real tab, the key match, and that the `'` prefix and number/boolean cells read back as the processor expects. I read the source but never ran it against Google.
+- That n8n matches the name-only `SlopeCycle Google` credential after import (expect to pick it once per Sheets node).
+- The real text of a failed Sheets call: in 1.64.3 the error output carries no message, so `write-failed` carries the generic text unless a newer n8n fills `$json.error`.
+- The GitHub Actions runner and the wake listener as callers, a real audio job, and the 60-minute timeout.
+- Overlapping runs (a send arrives while another run is mid-way). The processor's claims and sync lock prevent duplicate processing, but this was not tested.

@@ -3,59 +3,33 @@
   "nodes": [
     {
       "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "minutes",
-              "minutesInterval": 5
-            }
-          ]
-        }
-      },
-      "id": "3116788e-42ac-5e14-9fe5-bd7115c887e7",
-      "name": "Every 5 minutes",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [
-        0,
-        140
-      ]
-    },
-    {
-      "parameters": {
         "httpMethod": "POST",
-        "path": "slopecycle-run-now",
+        "path": "slopecycle-run",
         "responseMode": "onReceived",
         "options": {}
       },
-      "id": "9dd85586-019d-57b7-b6d3-7c2513f6cae1",
-      "name": "Run now button",
+      "id": "409bfb96-f5ee-50b7-816f-053bd3a33042",
+      "name": "Doorbell rings",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
         0,
-        320
+        100
       ],
-      "webhookId": "0435129a-89b0-560c-a125-4fc5051fef2c"
+      "webhookId": "4cb78d39-0d5b-534a-989c-4055cf8955e4"
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
             {
-              "id": "8df7fd3b-0b23-5178-9149-4dc04904c090",
-              "name": "inbox_folder_id",
-              "value": "PASTE_INBOX_FOLDER_ID_HERE",
-              "type": "string"
-            },
-            {
-              "id": "d6b92fd2-e60c-5921-9569-e70f105317f2",
+              "id": "2cf240ba-0406-5009-8c74-d7e4cea60f0a",
               "name": "spreadsheet_id",
               "value": "PASTE_SPREADSHEET_ID_HERE",
               "type": "string"
             },
             {
-              "id": "0e297dc0-e77c-5ac6-9d61-d04a58863687",
+              "id": "2dfc9f04-a0a6-50a5-b444-963162c8a482",
               "name": "processor_url",
               "value": "http://127.0.0.1:8787",
               "type": "string"
@@ -64,7 +38,7 @@
         },
         "options": {}
       },
-      "id": "5e9a26b8-21ce-55ce-b506-ec4bd1314dad",
+      "id": "1dc9f737-f994-516c-b67d-e060ac50b306",
       "name": "Settings",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -75,48 +49,30 @@
     },
     {
       "parameters": {
-        "resource": "fileFolder",
-        "operation": "search",
-        "searchMethod": "query",
-        "queryString": "",
-        "returnAll": true,
-        "filter": {
-          "folderId": {
-            "__rl": true,
-            "mode": "id",
-            "value": "={{ $('Settings').first().json.inbox_folder_id }}"
-          },
-          "whatToSearch": "files"
-        },
+        "method": "POST",
+        "url": "={{ $('Settings').first().json.processor_url }}/queue/sync",
         "options": {
-          "fields": [
-            "*"
-          ]
+          "timeout": 300000
         }
       },
-      "id": "40501c2a-e474-5ac5-9c96-d1ce37ba8179",
-      "name": "List files in Inbox",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
+      "id": "c49b02e8-5422-52c8-a18b-219bd896398b",
+      "name": "Ask processor what is new",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         600,
         100
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "name": "SlopeCycle Google"
-        }
-      }
+      ]
     },
     {
       "parameters": {
-        "aggregate": "aggregateAllItemData",
-        "destinationFieldName": "files",
+        "fieldToSplitOut": "todo",
+        "include": "noOtherFields",
         "options": {}
       },
-      "id": "44421417-558b-5d63-b51c-81bd30325fef",
-      "name": "Put all files in one list",
-      "type": "n8n-nodes-base.aggregate",
+      "id": "2b0612ea-6c25-59da-ba77-d121f83c5950",
+      "name": "One item per submission to handle",
+      "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
         860,
@@ -125,19 +81,13 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $('Settings').first().json.processor_url }}/plan",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ files: $json.files }) }}",
-        "options": {
-          "timeout": 60000
-        }
+        "batchSize": 1,
+        "options": {}
       },
-      "id": "39b60216-e07e-5a64-97bd-208880a5c598",
-      "name": "Ask processor what is new",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "651f9718-d0ea-560c-a327-14cf68dc22e4",
+      "name": "One submission at a time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
       "position": [
         1120,
         100
@@ -145,43 +95,31 @@
     },
     {
       "parameters": {
-        "fieldToSplitOut": "todo",
-        "options": {}
+        "method": "POST",
+        "url": "={{ $('Settings').first().json.processor_url }}/submissions/{{ encodeURIComponent($json.file_id) }}/process",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ action: $json.action }) }}",
+        "options": {
+          "timeout": 3600000
+        }
       },
-      "id": "7210f75a-9665-5a11-b1bd-95925c9ff1c1",
-      "name": "One item per file to handle",
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
+      "id": "76cb21ed-56fa-5582-9dc3-962645f87c3c",
+      "name": "Process the submission",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1380,
         100
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "9e2c850a-3050-5eda-8df8-ef1dcd0b2326",
-              "name": "url",
-              "type": "string",
-              "value": "={{ $('List files in Inbox').all().find(f => f.json.id === $json.file_id)?.json.webViewLink ?? '' }}"
-            },
-            {
-              "id": "fb8d391f-b692-583a-9583-2b1a33e9bc81",
-              "name": "submitted_by",
-              "type": "string",
-              "value": "={{ $('List files in Inbox').all().find(f => f.json.id === $json.file_id)?.json.lastModifyingUser?.displayName ?? '' }}"
-            }
-          ]
-        },
-        "includeOtherFields": true,
-        "options": {}
-      },
-      "id": "cd7e1935-05f1-5343-8547-d2e9de2dd0b7",
-      "name": "Add link and uploader",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "parameters": {},
+      "id": "a44a2be4-dd9a-5d4a-9231-cb1a3576eb22",
+      "name": "Processor answer",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
       "position": [
         1640,
         100
@@ -189,13 +127,31 @@
     },
     {
       "parameters": {
-        "batchSize": 1,
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "8a0839d2-eda5-5bfc-9044-7f6e670ca0ac",
+              "leftValue": "={{ $('Processor answer').first().json.evidence_rows.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
         "options": {}
       },
-      "id": "84f4f2da-226f-581a-9dff-cd78584032f6",
-      "name": "One file at a time",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
+      "id": "fe1bdef3-73c9-52ea-8d9e-269d787d50f3",
+      "name": "Any evidence quotes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
       "position": [
         1900,
         100
@@ -203,336 +159,16 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "93990f3d-7bc9-5688-8e5d-3d17f4aa4af5",
-              "leftValue": "={{ $json.action }}",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              },
-              "rightValue": "process"
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "070626d7-f8ce-5769-83ce-8223cf32ee88",
-      "name": "Does the file need to be read?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        2160,
-        100
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "file",
-        "operation": "download",
-        "fileId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "={{ $json.file_id }}"
-        },
-        "options": {
-          "binaryPropertyName": "data",
-          "googleFileConversion": {
-            "conversion": {
-              "docsToFormat": "text/plain"
-            }
-          }
-        }
-      },
-      "id": "3d039652-fb89-537a-afa8-67cee98e23a5",
-      "name": "Download file from Drive",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        2420,
-        0
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "name": "SlopeCycle Google"
-        }
-      },
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Settings').first().json.processor_url }}/process",
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "file_id",
-              "value": "={{ $json.file_id }}"
-            },
-            {
-              "name": "name",
-              "value": "={{ $json.name }}"
-            },
-            {
-              "name": "mime_type",
-              "value": "={{ $json.mime_type }}"
-            },
-            {
-              "name": "revision_key",
-              "value": "={{ $json.revision_key }}"
-            },
-            {
-              "name": "action",
-              "value": "={{ $json.action }}"
-            },
-            {
-              "name": "url",
-              "value": "={{ $json.url }}"
-            },
-            {
-              "name": "submitted_by",
-              "value": "={{ $json.submitted_by }}"
-            },
-            {
-              "parameterType": "formBinaryData",
-              "name": "file",
-              "inputDataFieldName": "data"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 3600000
-        }
-      },
-      "id": "5883aa87-aa51-55ff-b699-2879fb820d6a",
-      "name": "Send file to processor",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2680,
-        0
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Settings').first().json.processor_url }}/process",
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "file_id",
-              "value": "={{ $json.file_id }}"
-            },
-            {
-              "name": "name",
-              "value": "={{ $json.name }}"
-            },
-            {
-              "name": "mime_type",
-              "value": "={{ $json.mime_type }}"
-            },
-            {
-              "name": "revision_key",
-              "value": "={{ $json.revision_key }}"
-            },
-            {
-              "name": "action",
-              "value": "={{ $json.action }}"
-            },
-            {
-              "name": "url",
-              "value": "={{ $json.url }}"
-            },
-            {
-              "name": "submitted_by",
-              "value": "={{ $json.submitted_by }}"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 3600000
-        }
-      },
-      "id": "cbc21f98-82d6-50b4-b3fc-8ad556a9f8cd",
-      "name": "Send decision to processor (no file)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2680,
-        220
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {},
-      "id": "db40f4c3-2151-58f2-830d-6b0591113131",
-      "name": "Processor answer",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        2940,
-        100
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "de6b3bf5-9d27-5c07-89ad-019dcd468825",
-              "leftValue": "={{ $json.transcript_rows.length }}",
-              "operator": {
-                "type": "number",
-                "operation": "gt"
-              },
-              "rightValue": 0
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "52b47cb6-1125-5507-9005-022b4ca9eab8",
-      "name": "Any transcript lines?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        3200,
-        100
-      ]
-    },
-    {
-      "parameters": {
-        "fieldToSplitOut": "transcript_rows",
-        "options": {}
-      },
-      "id": "3b61e5af-fe45-597b-adee-e00386311f81",
-      "name": "One item per transcript line",
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
-      "position": [
-        3460,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "sheet",
-        "operation": "appendOrUpdate",
-        "documentId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "={{ $('Settings').first().json.spreadsheet_id }}"
-        },
-        "sheetName": {
-          "__rl": true,
-          "mode": "name",
-          "value": "Transcripts"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": null,
-          "matchingColumns": [
-            "line_id"
-          ],
-          "schema": []
-        },
-        "options": {
-          "cellFormat": "USER_ENTERED",
-          "handlingExtraData": "error",
-          "useAppend": true
-        }
-      },
-      "id": "9f36bb61-5bb3-5820-adda-46b174780262",
-      "name": "Save to Transcripts tab",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [
-        3720,
-        0
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "name": "SlopeCycle Google"
-        }
-      },
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "mode": "raw",
-        "jsonOutput": "={{ $('Processor answer').first().json }}",
-        "options": {}
-      },
-      "id": "f7418eaa-84db-53ce-a0f6-9e9af98b1edb",
-      "name": "Get the answer again (for evidence)",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        3980,
-        100
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "e420bd03-7367-5880-89b9-bc22cdf29821",
-              "leftValue": "={{ $json.evidence_rows.length }}",
-              "operator": {
-                "type": "number",
-                "operation": "gt"
-              },
-              "rightValue": 0
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "76baba99-5c5b-55ca-a7db-e5bdb3a849f2",
-      "name": "Any evidence quotes?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        4240,
-        100
-      ]
-    },
-    {
-      "parameters": {
         "fieldToSplitOut": "evidence_rows",
+        "include": "noOtherFields",
         "options": {}
       },
-      "id": "e2ab73c2-bebb-558f-92cc-6f1b37e3aac8",
+      "id": "7909cc9d-2db5-5751-b4c7-8460b4a11544",
       "name": "One item per evidence quote",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        4500,
+        2160,
         0
       ]
     },
@@ -559,17 +195,17 @@
           "schema": []
         },
         "options": {
-          "cellFormat": "USER_ENTERED",
+          "cellFormat": "RAW",
           "handlingExtraData": "error",
           "useAppend": true
         }
       },
-      "id": "2fec193d-4a66-52a3-b3b2-1526f9384bf2",
+      "id": "5114591b-6c3b-5cc6-977e-b91a0f4476e1",
       "name": "Save to Evidence tab",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        4760,
+        2420,
         0
       ],
       "credentials": {
@@ -585,14 +221,15 @@
         "jsonOutput": "={{ $('Processor answer').first().json }}",
         "options": {}
       },
-      "id": "4d7ebd13-2329-5b89-b3a8-64af52fa5ebd",
+      "id": "5f8fc7a6-9629-5831-a333-6757acce89c5",
       "name": "Get the answer again (for interview)",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        5020,
+        2680,
         100
-      ]
+      ],
+      "executeOnce": true
     },
     {
       "parameters": {
@@ -604,8 +241,8 @@
           },
           "conditions": [
             {
-              "id": "3ad1f586-398a-55fb-896a-f301ac030241",
-              "leftValue": "={{ $json.interview_rows.length }}",
+              "id": "c238c114-c82f-510d-93b8-aff5a3acdc2f",
+              "leftValue": "={{ $('Processor answer').first().json.interview_rows.length }}",
               "operator": {
                 "type": "number",
                 "operation": "gt"
@@ -617,26 +254,27 @@
         },
         "options": {}
       },
-      "id": "1cc6ae16-aa20-596b-b70f-14fc7c5995ed",
+      "id": "ef66b63b-6efa-5c9c-b6ce-53c6a7207a6e",
       "name": "Any interview row?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        5280,
+        2940,
         100
       ]
     },
     {
       "parameters": {
         "fieldToSplitOut": "interview_rows",
+        "include": "noOtherFields",
         "options": {}
       },
-      "id": "0b776b96-bcc7-5769-b61f-65c6466381cb",
+      "id": "cfb37e4a-efdc-5486-9282-7a8702ca85bb",
       "name": "One item per interview row",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        5540,
+        3200,
         0
       ]
     },
@@ -663,17 +301,17 @@
           "schema": []
         },
         "options": {
-          "cellFormat": "USER_ENTERED",
+          "cellFormat": "RAW",
           "handlingExtraData": "error",
           "useAppend": true
         }
       },
-      "id": "1e7d8712-0d5d-5dd9-9363-30e78248e436",
+      "id": "0a2df3ae-e9ad-5221-beb0-610a1c342b6a",
       "name": "Save to Interviews tab",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        5800,
+        3460,
         0
       ],
       "credentials": {
@@ -689,26 +327,28 @@
         "jsonOutput": "={{ $('Processor answer').first().json }}",
         "options": {}
       },
-      "id": "f0e2f83c-3d8d-5100-a28c-8da93dd675bd",
+      "id": "575d76e1-84b0-5db4-8c90-5b0c2f745714",
       "name": "Get the answer again (for run log)",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        6060,
+        3720,
         100
-      ]
+      ],
+      "executeOnce": true
     },
     {
       "parameters": {
         "fieldToSplitOut": "run_log_rows",
+        "include": "noOtherFields",
         "options": {}
       },
-      "id": "932cc2e9-fb32-5589-bc38-2620ea835c54",
+      "id": "3d093580-3eb6-5de5-89c1-957bd4c47825",
       "name": "One item per run log row",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        6320,
+        3980,
         100
       ]
     },
@@ -735,17 +375,17 @@
           "schema": []
         },
         "options": {
-          "cellFormat": "USER_ENTERED",
+          "cellFormat": "RAW",
           "handlingExtraData": "error",
           "useAppend": true
         }
       },
-      "id": "9aa7ba18-af57-520d-adf7-9e6ba46c9b73",
+      "id": "d4d2ff22-2cfc-5f4e-8619-0c1f729ff02d",
       "name": "Save to Run Log tab",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        6580,
+        4240,
         100
       ],
       "credentials": {
@@ -757,6 +397,44 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "={{ $('Settings').first().json.processor_url }}/runs/{{ $('Processor answer').first().json.run_id }}/write-failed",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: (typeof $json.error === 'string' ? $json.error : $json.error?.message) || 'Google Sheets failed (see the n8n log for details)' }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "9ffaabf0-aefe-5c2f-a600-633822054a81",
+      "name": "Tell processor: sheet failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2940,
+        340
+      ],
+      "onError": "continueRegularOutput",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ $('Processor answer').first().json }}",
+        "options": {}
+      },
+      "id": "00ba58bc-5187-5fb6-9a1f-80e16580cd0f",
+      "name": "Get the answer again (to check Interviews)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4560,
+        100
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -765,226 +443,563 @@
           },
           "conditions": [
             {
-              "id": "d4ed572d-5d15-5bc9-873f-3fad7798b2b5",
-              "leftValue": "={{ $('Processor answer').first().json.write }}",
+              "id": "e5183155-a205-5947-a918-bdf14b1f199e",
+              "leftValue": "={{ $('Processor answer').first().json.interview_rows.length }}",
               "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
             }
           ],
           "combinator": "and"
         },
         "options": {}
       },
-      "id": "429f19c1-35ef-562b-a786-65b6717e1dec",
-      "name": "Did processor ask us to save?",
+      "id": "309b6a08-5bd5-55c6-8e78-9e073418e75e",
+      "name": "Was an interview saved?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        6840,
+        4820,
         100
       ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $('Settings').first().json.processor_url }}/runs/{{ $('Processor answer').first().json.run_id }}/complete",
+        "fieldToSplitOut": "interview_rows",
+        "include": "noOtherFields",
+        "options": {}
+      },
+      "id": "1304c9c1-452a-5459-a6be-38b9238fc891",
+      "name": "One item per Interview to look up",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        5080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Settings').first().json.spreadsheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Interviews"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "interview_id",
+              "lookupValue": "={{ $json.interview_id }}"
+            }
+          ]
+        },
+        "combineFilters": "AND",
         "options": {
-          "timeout": 60000
+          "returnFirstMatch": false,
+          "outputFormatting": {
+            "values": {
+              "general": "UNFORMATTED_VALUE",
+              "date": "FORMATTED_STRING"
+            }
+          }
         }
       },
-      "id": "c6dfb93b-249b-5c61-9c76-497b98da804a",
-      "name": "Tell processor: save finished",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "46184623-eaba-5f9d-9b76-28de7ebe22ba",
+      "name": "Read Interview back from sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
       "position": [
-        7100,
+        5340,
         0
       ],
-      "onError": "continueRegularOutput"
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "interviews",
+        "options": {}
+      },
+      "id": "45937d1e-f10d-557c-9c63-9a947bd67781",
+      "name": "Collect Interview rows read back",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        5600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ { interviews: ($json.interviews || []).filter(r => r.interview_id) } }}",
+        "options": {}
+      },
+      "id": "6ae4c9ba-dbed-5760-bbb4-6c1de7bc8f8a",
+      "name": "Interview rows found",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5860,
+        100
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ $('Processor answer').first().json }}",
+        "options": {}
+      },
+      "id": "e79be3f1-3733-5612-84aa-4ea3df4f07cc",
+      "name": "Get the answer again (to check Evidence)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        6120,
+        100
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "6c75f31a-b325-576c-8e3e-9277b9eb7b03",
+              "leftValue": "={{ $('Processor answer').first().json.interview_rows.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c5888ce4-d13c-56fa-9190-45f03bc06497",
+      "name": "Is there an Interview to look up quotes for?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6380,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "interview_rows",
+        "include": "noOtherFields",
+        "options": {}
+      },
+      "id": "be0139d1-28ab-5dcc-88cd-ce9cef8a0716",
+      "name": "One item per Interview (for quotes)",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        6640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Settings').first().json.spreadsheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Evidence"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "interview_id",
+              "lookupValue": "={{ $json.interview_id }}"
+            }
+          ]
+        },
+        "combineFilters": "AND",
+        "options": {
+          "returnFirstMatch": false,
+          "outputFormatting": {
+            "values": {
+              "general": "UNFORMATTED_VALUE",
+              "date": "FORMATTED_STRING"
+            }
+          }
+        }
+      },
+      "id": "a84bd61d-c397-5b53-91b8-ba2c30b8541f",
+      "name": "Read Evidence back from sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        6900,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "evidence",
+        "options": {}
+      },
+      "id": "424f64f5-844a-54d5-bab2-0db2772c3f7b",
+      "name": "Collect Evidence rows read back",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        7160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ { evidence: ($json.evidence || []).filter(r => r.evidence_id) } }}",
+        "options": {}
+      },
+      "id": "7f6180cb-8adf-56f1-9d98-1770feffdf2d",
+      "name": "Evidence rows found",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        7420,
+        100
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Settings').first().json.spreadsheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Run Log"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "run_id",
+              "lookupValue": "={{ $('Processor answer').first().json.run_id }}"
+            }
+          ]
+        },
+        "combineFilters": "AND",
+        "options": {
+          "returnFirstMatch": false,
+          "outputFormatting": {
+            "values": {
+              "general": "UNFORMATTED_VALUE",
+              "date": "FORMATTED_STRING"
+            }
+          }
+        }
+      },
+      "id": "eb273f7a-6bad-534a-939d-3820735d4bbb",
+      "name": "Read Run Log back from sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        7680,
+        100
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "run_log",
+        "options": {}
+      },
+      "id": "903d4c7d-5d77-522f-a772-3cec54987979",
+      "name": "Collect Run Log row read back",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        7940,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ { interviews: $('Interview rows found').first().json.interviews, evidence: $('Evidence rows found').first().json.evidence, run_log: ($json.run_log || []).filter(r => r.run_id) } }}",
+        "options": {}
+      },
+      "id": "2d5f452e-6bf4-5b19-a568-4a06426d4dd2",
+      "name": "Put the three tabs together",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        8200,
+        100
+      ],
+      "executeOnce": true
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Settings').first().json.processor_url }}/runs/{{ $('Processor answer').first().json.run_id }}/write-failed",
+        "url": "={{ $('Settings').first().json.processor_url }}/runs/{{ $('Processor answer').first().json.run_id }}/verify",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ message: (typeof $json.error === 'string' ? $json.error : $json.error?.message) || 'Google Sheets write failed (see the n8n execution log for details)' }) }}",
+        "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
-          "timeout": 60000
+          "timeout": 120000
         }
       },
-      "id": "96a543f9-30a8-5f2b-a627-a5d09e3dc074",
-      "name": "Tell processor: save failed",
+      "id": "fbc3aece-537b-5726-90a0-36daa852ff31",
+      "name": "Ask processor to compare with the sheet",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4760,
-        300
+        8460,
+        100
       ],
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "content": "## SlopeCycle Interview Analyst\nEvery 5 minutes (or when someone presses **Run now**) this looks in the Google Drive **Inbox** folder, asks our local processor what is new, hands each new file to the processor, and writes the answers into the Google Sheet.\n\n**n8n only moves things around. The processor decides everything** (duplicates, checks, retries).\n\nBefore first use: open **Settings** and paste in your Inbox folder id and Sheet id.",
+        "content": "## SlopeCycle Interview Agent (v2: event-driven)\nThere is **no timer**. This workflow runs only when something rings its **doorbell**: a new interview was sent, the Mac woke up, or someone pressed **Run now** on the status page.\n\nThen: ask the processor what is waiting, let it analyse each interview **one at a time**, save the answers to the Google Sheet, **read them back from the sheet**, and let the processor compare. Only a perfect match lets it delete the interview.\n\n**n8n only moves things around. The processor decides everything.** Before first use: open **Settings** and paste your Sheet id.",
         "height": 260,
-        "width": 560,
+        "width": 760,
         "color": 4
       },
-      "id": "31711d86-9e99-5da8-9249-ff3137f4afb5",
+      "id": "3f6b0a9b-8a1a-5dbf-8ed5-034a162bd159",
       "name": "Note: Start here",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         -20,
-        -330
+        -440
       ]
     },
     {
       "parameters": {
-        "content": "### 1. Two ways to start\nThe timer fires every 5 minutes. The **Run now button** is a web address (POST /webhook/slopecycle-run-now) that answers right away and starts the same path.",
-        "height": 560,
+        "content": "### 1. The doorbell\nOne web address, POST `/webhook/slopecycle-run`. It answers right away and carries no data: it only says *go and look*. Listens on this Mac only.",
+        "height": 660,
         "width": 280,
         "color": 7
       },
-      "id": "50dfbd48-8ca7-5f0d-a87d-3d0c41f842b2",
-      "name": "Note: 1 Triggers",
+      "id": "f1e3c31b-55da-50a1-be01-758d3ea24b99",
+      "name": "Note: 1 Doorbell",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         -20,
-        -40
+        -140
       ]
     },
     {
       "parameters": {
-        "content": "### 2. Settings (one place)\nInbox folder id, Sheet id and the processor address live ONLY here. Change them here and nowhere else.",
-        "height": 330,
+        "content": "### 2. Settings\nThe Sheet id and the processor address. Change them here and nowhere else.",
+        "height": 660,
         "width": 280,
-        "color": 7
+        "color": 6
       },
-      "id": "62ca8598-2fc7-578e-b116-f6f521b2b3b2",
+      "id": "93b1e398-3ca8-5c40-9ba3-53c9f4e6c09c",
       "name": "Note: 2 Settings",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         280,
-        -40
+        -140
       ]
     },
     {
       "parameters": {
-        "content": "### 3. Look in the Inbox\nLists only the files directly inside the Inbox folder (not sub-folders), skipping trashed files, then puts them in one list.",
-        "height": 330,
-        "width": 520,
-        "color": 7
+        "content": "### 3. What is waiting?\nThe processor refreshes the queue, tidies up anything already verified, and lists what to do. Nothing waiting means nothing happens.",
+        "height": 660,
+        "width": 500,
+        "color": 3
       },
-      "id": "63709f96-4bf1-5a53-b113-5d35898f65db",
-      "name": "Note: 3 Inbox",
+      "id": "bd6f8a13-a9b7-55f6-b866-293a5877d300",
+      "name": "Note: 3 Ask",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         580,
-        -40
+        -140
       ]
     },
     {
       "parameters": {
-        "content": "### 4. Ask the processor what to do\nSends the whole file list to the processor. It answers with only the files that are new or changed, and for each one says what to do (**process**, **reject** or **rewrite**).",
-        "height": 330,
-        "width": 800,
-        "color": 7
+        "content": "### 4. One interview at a time\nThe processor runs one local AI model, so interviews go one by one. Audio can take up to an hour. The processor does the reading, thinking and checking, and hands back ready-to-save rows.",
+        "height": 660,
+        "width": 780,
+        "color": 5
       },
-      "id": "32b06318-443e-5a96-9032-6dc617bbf245",
-      "name": "Note: 4 Plan",
+      "id": "7431ac21-1306-583d-ba35-a1a208e21591",
+      "name": "Note: 4 Loop",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         1100,
-        -40
+        -140
       ]
     },
     {
       "parameters": {
-        "content": "### 5. One file at a time, then hand to the processor\nThe processor runs one local AI model, so files go one by one.\n- **process**: download the file (Google Docs become plain text) and send it.\n- **reject / rewrite**: no file needed, just send the decision.\nThis step can take up to an hour for audio.",
-        "height": 520,
-        "width": 1100,
-        "color": 7
+        "content": "### 5. Save to the Google Sheet\nIn order: **Evidence**, **Interviews**, then **Run Log**. Each row is matched on its id, so sending it twice never makes a copy. Empty lists are skipped. Cells are saved exactly as given (RAW), so dates stay text and nothing is ever treated as a formula.",
+        "height": 660,
+        "width": 2600,
+        "color": 1
       },
-      "id": "8f54a22a-0a3a-5583-bdb0-6732b3092013",
-      "name": "Note: 5 One at a time",
+      "id": "827e9139-2233-50fc-a562-fbb9fc4daca9",
+      "name": "Note: 5 Save",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1900,
-        -120
+        1880,
+        -140
       ]
     },
     {
       "parameters": {
-        "content": "### 6. Save to the Google Sheet (in this order)\nTranscripts, then Evidence, then Interviews, then Run Log. A step with nothing to save is skipped. Each row is added, or updated if its id is already there, so a retry never makes a duplicate. Only the columns the processor sends are written; any extra columns your team adds to a tab are left alone.",
-        "height": 220,
-        "width": 3000,
-        "color": 7
+        "content": "### 6. Read it back from the sheet (Interviews)\nThe rows are fetched again from the **sheet itself** by their id. This is the real check: it proves the sheet holds the data.",
+        "height": 660,
+        "width": 1440,
+        "color": 2
       },
-      "id": "da486af0-845b-597d-a4b6-c0ac3e4d223f",
-      "name": "Note: 6 Sheet",
+      "id": "52edb5fa-f03f-5eaa-b206-c521c7361192",
+      "name": "Note: 6a Read Interviews",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        3180,
-        -120
+        4540,
+        -140
       ]
     },
     {
       "parameters": {
-        "content": "### 7. Tell the processor how it went\nAll saves worked: **save finished** (the processor then marks the file done).\nA save failed: **save failed** with the error message (the processor will retry later). Either way we carry on with the next file.",
-        "height": 360,
-        "width": 560,
-        "color": 7
+        "content": "### Read it back (Evidence quotes)\nEvery quote for this interview is fetched, **all matches**, not only the first.",
+        "height": 660,
+        "width": 1440,
+        "color": 2
       },
-      "id": "4d5871c8-c6e6-5dba-b0ce-0a73aa4f6270",
-      "name": "Note: 7 Report",
+      "id": "ea22e8bf-d604-58d2-ae78-454e56871610",
+      "name": "Note: 6b Read Evidence",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        6800,
-        -120
+        6100,
+        -140
       ]
     },
     {
       "parameters": {
-        "content": "If the download or the processor call fails, we skip to the next file. The processor notices the file was never finished and offers it again later.",
-        "height": 130,
-        "width": 560,
+        "content": "### Read it back (Run Log)\nEvery interview has a Run Log row, even duplicates and failures, so this always runs.",
+        "height": 660,
+        "width": 480,
+        "color": 2
+      },
+      "id": "6e8643dd-ac4a-59fd-8daf-fc8019f6f741",
+      "name": "Note: 6c Read Run Log",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        7660,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 7. Let the processor compare\nThe three tabs go to the processor in one package. It checks every cell. Match: it deletes the interview. No match: it keeps it and tries again later.",
+        "height": 660,
+        "width": 540,
+        "color": 4
+      },
+      "id": "488f65f9-6afa-54f5-8d47-bd586cbfcccc",
+      "name": "Note: 7 Compare",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        8180,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Nothing is deleted until the sheet is read back and matches\nThe processor never trusts \"the save worked\". It keeps its own copy of what it sent, and only deletes the interview (notes and recording) from the private queue after it receives rows **read back from the Google Sheet** that match, cell for cell.\n- Missing row, missing column or changed value: **not deleted**, saved again on the next run.\n- Sheet save or read fails: the processor is told, and keeps everything.\n- Failed interviews (unreadable audio, empty notes) are never deleted automatically.\n- n8n keeps **no copy** of the interview content (execution history is switched off).",
+        "height": 260,
+        "width": 1900,
+        "color": 4
+      },
+      "id": "4b214b22-fbfd-5930-a5ba-3bcd1a727f10",
+      "name": "Note: Safety",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4540,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "content": "If processing an interview fails, or any Google Sheets step fails, we skip to the next interview. A sheet failure is reported to the processor (**Tell processor: sheet failed**), which keeps the data and offers it again later.",
+        "height": 150,
+        "width": 2600,
         "color": 3
       },
-      "id": "04a47dbe-d39c-53c0-b0a6-f31615b3d120",
+      "id": "a104f039-f03a-5e73-85c1-0313c448260d",
       "name": "Note: Failures",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        2400,
-        420
+        1880,
+        540
       ]
     }
   ],
   "pinData": {},
   "connections": {
-    "Every 5 minutes": {
-      "main": [
-        [
-          {
-            "node": "Settings",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Run now button": {
+    "Doorbell rings": {
       "main": [
         [
           {
@@ -999,28 +1014,6 @@
       "main": [
         [
           {
-            "node": "List files in Inbox",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "List files in Inbox": {
-      "main": [
-        [
-          {
-            "node": "Put all files in one list",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Put all files in one list": {
-      "main": [
-        [
-          {
             "node": "Ask processor what is new",
             "type": "main",
             "index": 0
@@ -1032,84 +1025,25 @@
       "main": [
         [
           {
-            "node": "One item per file to handle",
+            "node": "One item per submission to handle",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "One item per file to handle": {
+    "One item per submission to handle": {
       "main": [
         [
           {
-            "node": "Add link and uploader",
+            "node": "One submission at a time",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Add link and uploader": {
-      "main": [
-        [
-          {
-            "node": "One file at a time",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "One file at a time": {
-      "main": [
-        [],
-        [
-          {
-            "node": "Does the file need to be read?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Does the file need to be read?": {
-      "main": [
-        [
-          {
-            "node": "Download file from Drive",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send decision to processor (no file)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Download file from Drive": {
-      "main": [
-        [
-          {
-            "node": "Send file to processor",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "One file at a time",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send file to processor": {
+    "Process the submission": {
       "main": [
         [
           {
@@ -1120,25 +1054,7 @@
         ],
         [
           {
-            "node": "One file at a time",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send decision to processor (no file)": {
-      "main": [
-        [
-          {
-            "node": "Processor answer",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "One file at a time",
+            "node": "One submission at a time",
             "type": "main",
             "index": 0
           }
@@ -1149,83 +1065,7 @@
       "main": [
         [
           {
-            "node": "Any transcript lines?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Any transcript lines?": {
-      "main": [
-        [
-          {
-            "node": "One item per transcript line",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Get the answer again (for evidence)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "One item per transcript line": {
-      "main": [
-        [
-          {
-            "node": "Save to Transcripts tab",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save to Transcripts tab": {
-      "main": [
-        [
-          {
-            "node": "Get the answer again (for evidence)",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Tell processor: save failed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get the answer again (for evidence)": {
-      "main": [
-        [
-          {
             "node": "Any evidence quotes?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Any evidence quotes?": {
-      "main": [
-        [
-          {
-            "node": "One item per evidence quote",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Get the answer again (for interview)",
             "type": "main",
             "index": 0
           }
@@ -1254,7 +1094,7 @@
         ],
         [
           {
-            "node": "Tell processor: save failed",
+            "node": "Tell processor: sheet failed",
             "type": "main",
             "index": 0
           }
@@ -1266,24 +1106,6 @@
         [
           {
             "node": "Any interview row?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Any interview row?": {
-      "main": [
-        [
-          {
-            "node": "One item per interview row",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Get the answer again (for run log)",
             "type": "main",
             "index": 0
           }
@@ -1312,7 +1134,7 @@
         ],
         [
           {
-            "node": "Tell processor: save failed",
+            "node": "Tell processor: sheet failed",
             "type": "main",
             "index": 0
           }
@@ -1345,54 +1167,284 @@
       "main": [
         [
           {
-            "node": "Did processor ask us to save?",
+            "node": "Get the answer again (to check Interviews)",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Tell processor: save failed",
+            "node": "Tell processor: sheet failed",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Did processor ask us to save?": {
+    "Get the answer again (to check Interviews)": {
       "main": [
         [
           {
-            "node": "Tell processor: save finished",
+            "node": "Was an interview saved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per Interview to look up": {
+      "main": [
+        [
+          {
+            "node": "Read Interview back from sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Interview back from sheet": {
+      "main": [
+        [
+          {
+            "node": "Collect Interview rows read back",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "One file at a time",
+            "node": "Tell processor: sheet failed",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Tell processor: save finished": {
+    "Collect Interview rows read back": {
       "main": [
         [
           {
-            "node": "One file at a time",
+            "node": "Interview rows found",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Tell processor: save failed": {
+    "Interview rows found": {
       "main": [
         [
           {
-            "node": "One file at a time",
+            "node": "Get the answer again (to check Evidence)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get the answer again (to check Evidence)": {
+      "main": [
+        [
+          {
+            "node": "Is there an Interview to look up quotes for?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per Interview (for quotes)": {
+      "main": [
+        [
+          {
+            "node": "Read Evidence back from sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Evidence back from sheet": {
+      "main": [
+        [
+          {
+            "node": "Collect Evidence rows read back",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tell processor: sheet failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Evidence rows read back": {
+      "main": [
+        [
+          {
+            "node": "Evidence rows found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evidence rows found": {
+      "main": [
+        [
+          {
+            "node": "Read Run Log back from sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Run Log back from sheet": {
+      "main": [
+        [
+          {
+            "node": "Collect Run Log row read back",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tell processor: sheet failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Run Log row read back": {
+      "main": [
+        [
+          {
+            "node": "Put the three tabs together",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Put the three tabs together": {
+      "main": [
+        [
+          {
+            "node": "Ask processor to compare with the sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask processor to compare with the sheet": {
+      "main": [
+        [
+          {
+            "node": "One submission at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tell processor: sheet failed": {
+      "main": [
+        [
+          {
+            "node": "One submission at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One submission at a time": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Process the submission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any evidence quotes?": {
+      "main": [
+        [
+          {
+            "node": "One item per evidence quote",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get the answer again (for interview)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any interview row?": {
+      "main": [
+        [
+          {
+            "node": "One item per interview row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get the answer again (for run log)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was an interview saved?": {
+      "main": [
+        [
+          {
+            "node": "One item per Interview to look up",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Interview rows found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is there an Interview to look up quotes for?": {
+      "main": [
+        [
+          {
+            "node": "One item per Interview (for quotes)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evidence rows found",
             "type": "main",
             "index": 0
           }
@@ -1402,9 +1454,13 @@
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false
   },
-  "versionId": "65892235-de80-5244-bad3-10b797ab99b5",
+  "versionId": "6a4b169f-7882-586b-a35e-cf83355bce4b",
   "meta": {
     "templateCredsSetupCompleted": false
   },
