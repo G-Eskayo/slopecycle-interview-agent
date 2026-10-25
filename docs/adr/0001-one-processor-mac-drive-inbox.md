@@ -1,6 +1,6 @@
 # 1. One Processor Mac, a Drive Inbox as the queue, Git for code only
 
-Date: 2026-10-25. Status: accepted.
+Date: 2026-10-25. Status: superseded by [0005](0005-event-driven-git-queue.md) (queue and triggers); the single Processor Mac still holds.
 
 ## Context
 Five teammates, no always-on server, no paid subscriptions, everyone must be able to explain the system in a live demo. The agent must not run on Gil's machines.
