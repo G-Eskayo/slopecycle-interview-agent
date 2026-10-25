@@ -25,7 +25,7 @@ class TranscriptionFailed(Exception):
 class Result:
     analysis: Analysis
     lines: list[Line]
-    transcript_lines: list[Line] | None  # audio only: what to store in the Transcripts tab
+    transcript_lines: list[Line] | None  # the recording's lines; never stored (ADR 0006)
 
 
 def transcribe(data: bytes, name: str) -> dict:

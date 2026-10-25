@@ -1,55 +1,63 @@
-# Design — SlopeCycle Interview Analyst v1
+# Design — SlopeCycle Interview Analyst (v2, event-driven)
 
-Spec of record: [spec.md](spec.md). Decisions: [adr/](adr/). Terms: [../CONTEXT.md](../CONTEXT.md).
+Spec of record: [spec.md](spec.md). Decisions: [adr/](adr/) (0005 and 0006 define v2). Terms: [../CONTEXT.md](../CONTEXT.md). Upload contract: [submission-format.md](submission-format.md).
 
 ## Flow
 
 ```
- Teammate (any device)          Google Drive                    Processor Mac (Noah's)
- ─────────────────────          ────────────                    ──────────────────────
- upload notes / Doc / audio ──► Inbox folder ◄── list (5 min) ── n8n  Schedule + "Run now"
-                                                                  │
-                                                                  ├─ POST /plan  ─────► processor  (ledger: what is new/changed/stuck?)
-                                                                  ├─ download each todo file
-                                                                  ├─ POST /process ───► processor
-                                                                  │                       ├ text: Doc / txt / md / docx
-                                                                  │                       ├ audio → slope-transcribe (Parakeet Ultra + diarizer)
-                                                                  │                       ├ Ollama extract (JSON schema)
-                                                                  │                       └ validate, calculate, escape → rows
-                                 Transcripts folder ◄── upload ───┤ (audio only)
-                                 Interview sheet   ◄── upsert ────┤ Interviews / Evidence / Run Log, keyed
-                                                                  └─ POST /runs/{id}/complete ► processor
+ Teammate Mac                     GitHub (private queue repo)             Processor Mac (Noah's)
+ ────────────                     ───────────────────────────             ──────────────────────
+ SlopeCycle Send ── 1 commit ───► submissions/<id>/{meta,notes,rec}
+  (Wispr types in; audio → 16 kHz        │ push event
+   mono AAC 24 kbps; offline outbox)    ▼
+                                  Actions job on the self-hosted runner ─► curl 127.0.0.1:5678/webhook/slopecycle-run
+                                                                          ▲  slope-wake (login / wake) rings the same URL
+                                                                          │  Run now button rings the same URL
+                                                                          n8n
+                                                                           ├ POST /queue/sync     (fetch+reset clone, purge verified, compact, plan)
+                                                                           ├ POST /submissions/{id}/process   (transcribe, extract, validate → rows)
+                                                                           ├ Sheets append-or-update (RAW): Evidence, Interviews, Run Log
+                                                                           ├ Sheets Get Row(s) by key → read-back
+                                                                           └ POST /runs/{id}/verify  → match: purge Submission (commit [skip ci])
+                                                                                                     → mismatch: keep, write again on next trigger
 ```
 
 ## Components
 
 | Component | Where | Job |
 |---|---|---|
-| `workflow/` | n8n on the Processor Mac | Schedule, Drive list/download, Sheets upserts, transcript upload |
-| `processor/` | Python, `127.0.0.1:8787`, launchd | Ledger (SQLite), extraction, validation, row building |
-| `transcriber/` | Swift CLI `slope-transcribe` | Audio file → JSON transcript with speakers and timestamps |
+| `send-app/` | each teammate's Mac | The approved window; compress; single-commit write via the Git Data API; Keychain; outbox |
+| queue repo (from `queue-repo-template/`) | GitHub, private | Holds Submissions only until verified; Actions workflow rings the doorbell, no checkout |
+| runner | Processor Mac (launchd, via `scripts/install-runner.sh`) | Outbound connection to GitHub; runs the doorbell job |
+| `wake/` (`slope-wake`) | Processor Mac (launchd) | Rings at login and on every wake from sleep, bounded retries |
+| `workflow/` | n8n on the Processor Mac, 127.0.0.1 only | Moves data; makes no decisions; no execution history |
+| `processor/` | Python, 127.0.0.1:8787 | Ledger, queue clone, extraction, validation, verification, purge, compaction |
+| `transcriber/` | Swift CLI | Parakeet Ultra + diarizer → speaker-labelled timestamped lines |
 | Ollama | Processor Mac | `qwen3:8b`, local only |
 
 ## Run states
 
-`claimed → awaiting_write → completed`, or `failed` (retryable or permanent), or `skipped` (duplicate / unsupported, logged once per revision). A claim is a lease: one older than 30 minutes is treated as abandoned and retried. Max 3 attempts, then permanent failure with the reason in Run Log.
+`claimed → awaiting_write → completed (verified) → purged`. Also `retry` (bounded backoff, at most 3 extraction attempts; sheet failures retried from cache), `failed` (needs a person; never purged), `duplicate` (logged; a duplicate of *another* Submission is purged once its Run Log row is verified). Verification clears the cached rows; the ledger keeps only fingerprints (content hash, ids, times).
 
-Revision key: Drive `md5Checksum` when present (uploaded files), otherwise Drive `version` (Google Docs). The content SHA-256 is also stored so a re-upload of identical bytes is a duplicate.
-
-## Sources supported in v1
-
-Google Docs (exported as text), `.txt`, `.md`, `.docx`, audio (`.m4a .mp3 .wav .aac .caf .mp4 .mov`). PDFs, images, scans and anything else: a Run Log row saying unsupported, no Interview row.
+Revision key: the git tree id of the Submission folder. Duplicate key: SHA-256 over the notes and recording bytes.
 
 ## Validation rules (code, not prompt)
 
-- Every Evidence excerpt must be found in the source text (whitespace/quote-normalised). Not found → dropped, reason added to `review_reasons`.
-- `willingness_to_rent` ∈ yes / conditional / no / undecided / null. "yes" with conditions → conditional + review reason.
-- Spending numbers numeric or null. `derived_per_child_amount` computed only when basis = household, period = season, items = outerwear only, and kid count known; otherwise null with a `derivation_note` saying why.
-- Expert interviews are flagged `exclude_from_parent_stats`.
-- Conflicting statements, unverified excerpts, empty extraction, or instructions-to-the-agent found in the source → `review_status = Needs review`.
-- Every text cell starting with `= + - @` (or tab/CR) is prefixed with `'`.
-- Unstated → empty in the sheet, "Not provided" in the summary; `missing_fields` lists them.
+- Every Evidence excerpt must appear in the source (normalised); otherwise dropped and flagged.
+- Numbers (kids, ages, amounts, parent age) must appear in the source as digits or words; otherwise removed and flagged.
+- `willingness_to_rent` ∈ yes / conditional / no / undecided; "yes" with conditions becomes conditional.
+- Spending basis is checked against the respondent's words ("both", "total" → household; "each", "per kid" → per child).
+- `derived_per_child_amount` is computed in code, only for household + per season + outerwear only + known kid count.
+- Interviewer-entered details (respondent label, parent/expert, date, interviewer) override the model.
+- Notes lines are interviewer notes unless quoted; expert interviews' statements are expert_opinion and excluded from parent stats.
+- Lines containing instructions to the agent are withheld from the model and the row is flagged.
+- Text starting with `= + - @` is prefixed with `'`; Sheets writes are RAW, so nothing is evaluated.
+- Unanswered interview fields read "Not collected in interview" in the sheet.
 
-## Not in v1 (slice 2)
+## Retention
 
-Mapping onto the team's existing interview sheet (not yet seen), preserving founder Overrides across revisions, chunking very long transcripts, trend reports across interviews.
+See ADR 0006: Submissions are deleted only after a cell-by-cell read-back match; the queue's history is replaced with one commit whenever the queue is empty and nothing is in flight (`--force-with-lease`). No transcripts are stored. Failed Submissions stay until a person acts.
+
+## Not in v2
+
+Mapping onto a pre-existing team sheet, founder overrides across revisions (Submissions are immutable; a correction is a new Send), trend reports across interviews.
