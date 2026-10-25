@@ -38,6 +38,20 @@ STATUS_LABEL = {"claimed": "running", "awaiting_write": "completed", "completed"
                 "failed": "failed (needs a person)", "duplicate": "duplicate (skipped)"}
 
 
+def load_env_file(path: Path | None = None) -> None:
+    """Read ~/.slopecycle.env (mode 600) so the GitHub key never sits in a world-readable launchd plist.
+    Real environment variables win."""
+    path = path or Path(os.environ.get("SLOPE_ENV_FILE", Path.home() / ".slopecycle.env"))
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
 def now() -> datetime:
     return datetime.now(timezone.utc).replace(microsecond=0)
 
@@ -48,6 +62,8 @@ def data_dir() -> Path:
     return d
 
 
+if not os.environ.get("PYTEST_CURRENT_TEST"):
+    load_env_file()
 app = FastAPI(title="SlopeCycle interview processor")
 _ledger: Ledger | None = None
 _queue: QueueRepo | None = None

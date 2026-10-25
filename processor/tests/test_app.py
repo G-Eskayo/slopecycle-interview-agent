@@ -393,3 +393,15 @@ def test_status_page_renders(env):
     process(env)
     page = env.get("/").text
     assert "Run now" in page and SID in page
+
+
+def test_env_file_is_read_but_real_environment_wins(tmp_path, monkeypatch):
+    f = tmp_path / ".slopecycle.env"
+    f.write_text("# comment\nSLOPE_QUEUE_REPO=noah/queue\nSLOPE_MODEL='qwen3:8b'\nnot a line\nSLOPE_TEST_KEEP=from-file\n")
+    monkeypatch.delenv("SLOPE_QUEUE_REPO", raising=False)
+    monkeypatch.setenv("SLOPE_TEST_KEEP", "from-env")
+    app_module.load_env_file(f)
+    import os
+    assert os.environ["SLOPE_QUEUE_REPO"] == "noah/queue" and os.environ["SLOPE_MODEL"] == "qwen3:8b"
+    assert os.environ["SLOPE_TEST_KEEP"] == "from-env"
+    monkeypatch.delenv("SLOPE_QUEUE_REPO")
