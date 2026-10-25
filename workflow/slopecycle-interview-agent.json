@@ -1,0 +1,1412 @@
+{
+  "name": "SlopeCycle Interview Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "3116788e-42ac-5e14-9fe5-bd7115c887e7",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slopecycle-run-now",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "9dd85586-019d-57b7-b6d3-7c2513f6cae1",
+      "name": "Run now button",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        320
+      ],
+      "webhookId": "0435129a-89b0-560c-a125-4fc5051fef2c"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8df7fd3b-0b23-5178-9149-4dc04904c090",
+              "name": "inbox_folder_id",
+              "value": "PASTE_INBOX_FOLDER_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "d6b92fd2-e60c-5921-9569-e70f105317f2",
+              "name": "spreadsheet_id",
+              "value": "PASTE_SPREADSHEET_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "0e297dc0-e77c-5ac6-9d61-d04a58863687",
+              "name": "processor_url",
+              "value": "http://127.0.0.1:8787",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5e9a26b8-21ce-55ce-b506-ec4bd1314dad",
+      "name": "Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        300,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "operation": "search",
+        "searchMethod": "query",
+        "queryString": "",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "={{ $('Settings').first().json.inbox_folder_id }}"
+          },
+          "whatToSearch": "files"
+        },
+        "options": {
+          "fields": [
+            "*"
+          ]
+        }
+      },
+      "id": "40501c2a-e474-5ac5-9c96-d1ce37ba8179",
+      "name": "List files in Inbox",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        600,
+        100
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "files",
+        "options": {}
+      },
+      "id": "44421417-558b-5d63-b51c-81bd30325fef",
+      "name": "Put all files in one list",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        860,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Settings').first().json.processor_url }}/plan",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ files: $json.files }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "39b60216-e07e-5a64-97bd-208880a5c598",
+      "name": "Ask processor what is new",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "todo",
+        "options": {}
+      },
+      "id": "7210f75a-9665-5a11-b1bd-95925c9ff1c1",
+      "name": "One item per file to handle",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1380,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9e2c850a-3050-5eda-8df8-ef1dcd0b2326",
+              "name": "url",
+              "type": "string",
+              "value": "={{ $('List files in Inbox').all().find(f => f.json.id === $json.file_id)?.json.webViewLink ?? '' }}"
+            },
+            {
+              "id": "fb8d391f-b692-583a-9583-2b1a33e9bc81",
+              "name": "submitted_by",
+              "type": "string",
+              "value": "={{ $('List files in Inbox').all().find(f => f.json.id === $json.file_id)?.json.lastModifyingUser?.displayName ?? '' }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "cd7e1935-05f1-5343-8547-d2e9de2dd0b7",
+      "name": "Add link and uploader",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1640,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "84f4f2da-226f-581a-9dff-cd78584032f6",
+      "name": "One file at a time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "93990f3d-7bc9-5688-8e5d-3d17f4aa4af5",
+              "leftValue": "={{ $json.action }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "process"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "070626d7-f8ce-5769-83ce-8223cf32ee88",
+      "name": "Does the file need to be read?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2160,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.file_id }}"
+        },
+        "options": {
+          "binaryPropertyName": "data",
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "text/plain"
+            }
+          }
+        }
+      },
+      "id": "3d039652-fb89-537a-afa8-67cee98e23a5",
+      "name": "Download file from Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2420,
+        0
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Settings').first().json.processor_url }}/process",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file_id",
+              "value": "={{ $json.file_id }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.name }}"
+            },
+            {
+              "name": "mime_type",
+              "value": "={{ $json.mime_type }}"
+            },
+            {
+              "name": "revision_key",
+              "value": "={{ $json.revision_key }}"
+            },
+            {
+              "name": "action",
+              "value": "={{ $json.action }}"
+            },
+            {
+              "name": "url",
+              "value": "={{ $json.url }}"
+            },
+            {
+              "name": "submitted_by",
+              "value": "={{ $json.submitted_by }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 3600000
+        }
+      },
+      "id": "5883aa87-aa51-55ff-b699-2879fb820d6a",
+      "name": "Send file to processor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2680,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Settings').first().json.processor_url }}/process",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file_id",
+              "value": "={{ $json.file_id }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.name }}"
+            },
+            {
+              "name": "mime_type",
+              "value": "={{ $json.mime_type }}"
+            },
+            {
+              "name": "revision_key",
+              "value": "={{ $json.revision_key }}"
+            },
+            {
+              "name": "action",
+              "value": "={{ $json.action }}"
+            },
+            {
+              "name": "url",
+              "value": "={{ $json.url }}"
+            },
+            {
+              "name": "submitted_by",
+              "value": "={{ $json.submitted_by }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 3600000
+        }
+      },
+      "id": "cbc21f98-82d6-50b4-b3fc-8ad556a9f8cd",
+      "name": "Send decision to processor (no file)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2680,
+        220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "id": "db40f4c3-2151-58f2-830d-6b0591113131",
+      "name": "Processor answer",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2940,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "de6b3bf5-9d27-5c07-89ad-019dcd468825",
+              "leftValue": "={{ $json.transcript_rows.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "52b47cb6-1125-5507-9005-022b4ca9eab8",
+      "name": "Any transcript lines?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3200,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "transcript_rows",
+        "options": {}
+      },
+      "id": "3b61e5af-fe45-597b-adee-e00386311f81",
+      "name": "One item per transcript line",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        3460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Settings').first().json.spreadsheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Transcripts"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": null,
+          "matchingColumns": [
+            "line_id"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED",
+          "handlingExtraData": "error",
+          "useAppend": true
+        }
+      },
+      "id": "9f36bb61-5bb3-5820-adda-46b174780262",
+      "name": "Save to Transcripts tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3720,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ $('Processor answer').first().json }}",
+        "options": {}
+      },
+      "id": "f7418eaa-84db-53ce-a0f6-9e9af98b1edb",
+      "name": "Get the answer again (for evidence)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3980,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "e420bd03-7367-5880-89b9-bc22cdf29821",
+              "leftValue": "={{ $json.evidence_rows.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "76baba99-5c5b-55ca-a7db-e5bdb3a849f2",
+      "name": "Any evidence quotes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "evidence_rows",
+        "options": {}
+      },
+      "id": "e2ab73c2-bebb-558f-92cc-6f1b37e3aac8",
+      "name": "One item per evidence quote",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        4500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Settings').first().json.spreadsheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Evidence"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": null,
+          "matchingColumns": [
+            "evidence_id"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED",
+          "handlingExtraData": "error",
+          "useAppend": true
+        }
+      },
+      "id": "2fec193d-4a66-52a3-b3b2-1526f9384bf2",
+      "name": "Save to Evidence tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4760,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ $('Processor answer').first().json }}",
+        "options": {}
+      },
+      "id": "4d7ebd13-2329-5b89-b3a8-64af52fa5ebd",
+      "name": "Get the answer again (for interview)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5020,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "3ad1f586-398a-55fb-896a-f301ac030241",
+              "leftValue": "={{ $json.interview_rows.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1cc6ae16-aa20-596b-b70f-14fc7c5995ed",
+      "name": "Any interview row?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5280,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "interview_rows",
+        "options": {}
+      },
+      "id": "0b776b96-bcc7-5769-b61f-65c6466381cb",
+      "name": "One item per interview row",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        5540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Settings').first().json.spreadsheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Interviews"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": null,
+          "matchingColumns": [
+            "interview_id"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED",
+          "handlingExtraData": "error",
+          "useAppend": true
+        }
+      },
+      "id": "1e7d8712-0d5d-5dd9-9363-30e78248e436",
+      "name": "Save to Interviews tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        5800,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ $('Processor answer').first().json }}",
+        "options": {}
+      },
+      "id": "f0e2f83c-3d8d-5100-a28c-8da93dd675bd",
+      "name": "Get the answer again (for run log)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        6060,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "run_log_rows",
+        "options": {}
+      },
+      "id": "932cc2e9-fb32-5589-bc38-2620ea835c54",
+      "name": "One item per run log row",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        6320,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Settings').first().json.spreadsheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Run Log"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": null,
+          "matchingColumns": [
+            "run_id"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED",
+          "handlingExtraData": "error",
+          "useAppend": true
+        }
+      },
+      "id": "9aa7ba18-af57-520d-adf7-9e6ba46c9b73",
+      "name": "Save to Run Log tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        6580,
+        100
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "SlopeCycle Google"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "d4ed572d-5d15-5bc9-873f-3fad7798b2b5",
+              "leftValue": "={{ $('Processor answer').first().json.write }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "429f19c1-35ef-562b-a786-65b6717e1dec",
+      "name": "Did processor ask us to save?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6840,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Settings').first().json.processor_url }}/runs/{{ $('Processor answer').first().json.run_id }}/complete",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "c6dfb93b-249b-5c61-9c76-497b98da804a",
+      "name": "Tell processor: save finished",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7100,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Settings').first().json.processor_url }}/runs/{{ $('Processor answer').first().json.run_id }}/write-failed",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: (typeof $json.error === 'string' ? $json.error : $json.error?.message) || 'Google Sheets write failed (see the n8n execution log for details)' }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "96a543f9-30a8-5f2b-a627-a5d09e3dc074",
+      "name": "Tell processor: save failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4760,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## SlopeCycle Interview Analyst\nEvery 5 minutes (or when someone presses **Run now**) this looks in the Google Drive **Inbox** folder, asks our local processor what is new, hands each new file to the processor, and writes the answers into the Google Sheet.\n\n**n8n only moves things around. The processor decides everything** (duplicates, checks, retries).\n\nBefore first use: open **Settings** and paste in your Inbox folder id and Sheet id.",
+        "height": 260,
+        "width": 560,
+        "color": 4
+      },
+      "id": "31711d86-9e99-5da8-9249-ff3137f4afb5",
+      "name": "Note: Start here",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -330
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 1. Two ways to start\nThe timer fires every 5 minutes. The **Run now button** is a web address (POST /webhook/slopecycle-run-now) that answers right away and starts the same path.",
+        "height": 560,
+        "width": 280,
+        "color": 7
+      },
+      "id": "50dfbd48-8ca7-5f0d-a87d-3d0c41f842b2",
+      "name": "Note: 1 Triggers",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 2. Settings (one place)\nInbox folder id, Sheet id and the processor address live ONLY here. Change them here and nowhere else.",
+        "height": 330,
+        "width": 280,
+        "color": 7
+      },
+      "id": "62ca8598-2fc7-578e-b116-f6f521b2b3b2",
+      "name": "Note: 2 Settings",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        280,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 3. Look in the Inbox\nLists only the files directly inside the Inbox folder (not sub-folders), skipping trashed files, then puts them in one list.",
+        "height": 330,
+        "width": 520,
+        "color": 7
+      },
+      "id": "63709f96-4bf1-5a53-b113-5d35898f65db",
+      "name": "Note: 3 Inbox",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        580,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 4. Ask the processor what to do\nSends the whole file list to the processor. It answers with only the files that are new or changed, and for each one says what to do (**process**, **reject** or **rewrite**).",
+        "height": 330,
+        "width": 800,
+        "color": 7
+      },
+      "id": "32b06318-443e-5a96-9032-6dc617bbf245",
+      "name": "Note: 4 Plan",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 5. One file at a time, then hand to the processor\nThe processor runs one local AI model, so files go one by one.\n- **process**: download the file (Google Docs become plain text) and send it.\n- **reject / rewrite**: no file needed, just send the decision.\nThis step can take up to an hour for audio.",
+        "height": 520,
+        "width": 1100,
+        "color": 7
+      },
+      "id": "8f54a22a-0a3a-5583-bdb0-6732b3092013",
+      "name": "Note: 5 One at a time",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 6. Save to the Google Sheet (in this order)\nTranscripts, then Evidence, then Interviews, then Run Log. A step with nothing to save is skipped. Each row is added, or updated if its id is already there, so a retry never makes a duplicate. Only the columns the processor sends are written; any extra columns your team adds to a tab are left alone.",
+        "height": 220,
+        "width": 3000,
+        "color": 7
+      },
+      "id": "da486af0-845b-597d-a4b6-c0ac3e4d223f",
+      "name": "Note: 6 Sheet",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3180,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 7. Tell the processor how it went\nAll saves worked: **save finished** (the processor then marks the file done).\nA save failed: **save failed** with the error message (the processor will retry later). Either way we carry on with the next file.",
+        "height": 360,
+        "width": 560,
+        "color": 7
+      },
+      "id": "4d5871c8-c6e6-5dba-b0ce-0a73aa4f6270",
+      "name": "Note: 7 Report",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        6800,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "If the download or the processor call fails, we skip to the next file. The processor notices the file was never finished and offers it again later.",
+        "height": 130,
+        "width": 560,
+        "color": 3
+      },
+      "id": "04a47dbe-d39c-53c0-b0a6-f31615b3d120",
+      "name": "Note: Failures",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        420
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run now button": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "List files in Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List files in Inbox": {
+      "main": [
+        [
+          {
+            "node": "Put all files in one list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Put all files in one list": {
+      "main": [
+        [
+          {
+            "node": "Ask processor what is new",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask processor what is new": {
+      "main": [
+        [
+          {
+            "node": "One item per file to handle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per file to handle": {
+      "main": [
+        [
+          {
+            "node": "Add link and uploader",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add link and uploader": {
+      "main": [
+        [
+          {
+            "node": "One file at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One file at a time": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Does the file need to be read?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Does the file need to be read?": {
+      "main": [
+        [
+          {
+            "node": "Download file from Drive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send decision to processor (no file)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file from Drive": {
+      "main": [
+        [
+          {
+            "node": "Send file to processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "One file at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send file to processor": {
+      "main": [
+        [
+          {
+            "node": "Processor answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "One file at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send decision to processor (no file)": {
+      "main": [
+        [
+          {
+            "node": "Processor answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "One file at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor answer": {
+      "main": [
+        [
+          {
+            "node": "Any transcript lines?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any transcript lines?": {
+      "main": [
+        [
+          {
+            "node": "One item per transcript line",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get the answer again (for evidence)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per transcript line": {
+      "main": [
+        [
+          {
+            "node": "Save to Transcripts tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Transcripts tab": {
+      "main": [
+        [
+          {
+            "node": "Get the answer again (for evidence)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tell processor: save failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get the answer again (for evidence)": {
+      "main": [
+        [
+          {
+            "node": "Any evidence quotes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any evidence quotes?": {
+      "main": [
+        [
+          {
+            "node": "One item per evidence quote",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get the answer again (for interview)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per evidence quote": {
+      "main": [
+        [
+          {
+            "node": "Save to Evidence tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Evidence tab": {
+      "main": [
+        [
+          {
+            "node": "Get the answer again (for interview)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tell processor: save failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get the answer again (for interview)": {
+      "main": [
+        [
+          {
+            "node": "Any interview row?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any interview row?": {
+      "main": [
+        [
+          {
+            "node": "One item per interview row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get the answer again (for run log)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per interview row": {
+      "main": [
+        [
+          {
+            "node": "Save to Interviews tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Interviews tab": {
+      "main": [
+        [
+          {
+            "node": "Get the answer again (for run log)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tell processor: save failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get the answer again (for run log)": {
+      "main": [
+        [
+          {
+            "node": "One item per run log row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per run log row": {
+      "main": [
+        [
+          {
+            "node": "Save to Run Log tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Run Log tab": {
+      "main": [
+        [
+          {
+            "node": "Did processor ask us to save?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tell processor: save failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Did processor ask us to save?": {
+      "main": [
+        [
+          {
+            "node": "Tell processor: save finished",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "One file at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tell processor: save finished": {
+      "main": [
+        [
+          {
+            "node": "One file at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tell processor: save failed": {
+      "main": [
+        [
+          {
+            "node": "One file at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "65892235-de80-5244-bad3-10b797ab99b5",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

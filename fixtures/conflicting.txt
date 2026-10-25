@@ -1,0 +1,7 @@
+SYNTHETIC TEST DATA - not a real interview
+Interviewer: Test Interviewer F
+Respondent: Parent P-SYN-06
+A: We have three kids and all of them ski.
+A: Spending is about $150 a season per kid on jackets and pants.
+Later in the call:
+A: Actually only two of them ski, the youngest hasn't started.

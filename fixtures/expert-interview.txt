@@ -1,0 +1,7 @@
+SYNTHETIC TEST DATA - not a real interview
+Interviewer: Test Interviewer D
+Respondent: Ski shop owner E-SYN-01 (expert, not a parent)
+Q: What do parents ask for?
+A: In my experience parents want the cheapest jacket that will last one season. Most of them come back every fall because the kid outgrew it.
+Q: Would they rent?
+A: I think a lot of parents would rent if it included a size swap, but they hate deposits.

@@ -1,0 +1,7 @@
+SYNTHETIC TEST DATA - not a real interview
+Interviewer: Test Interviewer C
+Respondent: Parent P-SYN-03
+Q: What do you spend each season on gear for the kids?
+A: Around $300 for both kids, but some of that was boots.
+Q: Would you rent jackets and pants?
+A: Maybe, depends on the price.
